@@ -1,0 +1,493 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система расчета ЗП операторов 3.0</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1>💰 ЗП Система 3.0</h1>
+            <div class="subtitle">Улучшенная версия</div>
+            <button class="toggle-sidebar" onclick="toggleSidebar()">
+                <i>◀</i>
+            </button>
+        </div>
+
+        <div class="nav-links">
+            <div class="nav-item active" onclick="showSection('dashboard')">
+                <i>📊</i>
+                <span>Дашборд</span>
+            </div>
+            <div class="nav-item" onclick="showSection('operators')">
+                <i>👥</i>
+                <span>Операторы</span>
+            </div>
+            <div class="nav-item" onclick="showSection('calculations')">
+                <i>🧮</i>
+                <span>Расчеты ЗП</span>
+            </div>
+            <div class="nav-item" onclick="showSection('payments')">
+                <i>💳</i>
+                <span>Выплаты</span>
+            </div>
+            <div class="nav-item" onclick="showSection('settings')">
+                <i>⚙️</i>
+                <span>Настройки</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <button class="mobile-menu-btn" onclick="toggleSidebar()">
+                    <i>☰</i>
+                </button>
+                <h2 id="pageTitle">Дашборд</h2>
+            </div>
+            <div class="user-menu">
+                <div class="notification-badge" onclick="showNotifications()" id="notificationBadge">0</div>
+                <i>👤</i>
+                <div class="user-info">
+                    <strong>Администратор</strong>
+                    <div style="font-size: 0.9em; color: #7f8c8d;">Менеджер</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard" class="section active">
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>📈 Статистика</h3>
+                    </div>
+                    <div id="dashboardStats">
+                        <div style="text-align: center; padding: 40px;">
+                            Загрузка статистики...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>👥 Активные операторы</h3>
+                    </div>
+                    <div id="activeOperators">
+                        <div style="text-align: center; padding: 40px;">
+                            Загрузка операторов...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>💰 Последние выплаты</h3>
+                    </div>
+                    <div id="recentPayments">
+                        <div style="text-align: center; padding: 40px;">
+                            Загрузка выплат...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Operators Section -->
+        <div id="operators" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Управление операторами</h3>
+                    <div>
+                        <button class="btn btn-success" onclick="showOperatorModal()">
+                            <i>➕</i> Добавить оператора
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ФИО</th>
+                                <th>Тип ЗП</th>
+                                <th>Базовый %</th>
+                                <th>Налоговый бонус</th>
+                                <th>Статус</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="operatorsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calculations Section -->
+        <div id="calculations" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Расчет заработной платы</h3>
+                    <button class="btn btn-primary" onclick="loadCalculations()">
+                        <i>🔄</i> Обновить
+                    </button>
+                </div>
+
+                <!-- Форма расчета -->
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <h4>Новый расчет</h4>
+                    </div>
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Оператор *</label>
+                            <select class="form-control" id="calcOperator" onchange="onOperatorChange()">
+                                <option value="">Выберите оператора</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Мотивация для расчета</label>
+                            <select class="form-control" id="calcMotivationOverride">
+                                <option value="">По умолчанию из оператора</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Период расчета</label>
+                            <div class="grid-2">
+                                <input type="date" class="form-control" id="calcPeriodStart" placeholder="Начало">
+                                <input type="date" class="form-control" id="calcPeriodEnd" placeholder="Конец">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Рабочих дней в периоде</label>
+                            <input type="number" class="form-control" id="workingDaysInPeriod" placeholder="0" min="0" step="0.5">
+                        </div>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>
+                                Сумма выкупленных заказов *
+                                <span class="help-icon" data-tooltip="Сумма заказов, которые были выкуплены клиентами">❓</span>
+                            </label>
+                            <input type="number" class="form-control" id="kcAmount" placeholder="0" oninput="deriveAmounts()">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                Сумма невыкупленных заказов *
+                                <span class="help-icon" data-tooltip="Сумма заказов, которые не были выкуплены клиентами">❓</span>
+                            </label>
+                            <input type="number" class="form-control" id="nonKcAmount" placeholder="0" oninput="deriveAmounts()">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                Общая сумма продаж *
+                                <span class="help-icon" data-tooltip="Общая сумма всех заказов (выкупленных + невыкупленных)">❓</span>
+                            </label>
+                            <input type="number" class="form-control" id="salesAmount" placeholder="0" oninput="deriveAmounts()">
+                        </div>
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>
+                                Процент выкупа
+                                <span class="help-icon" data-tooltip="Процент выкупленных заказов от общей суммы продаж">❓</span>
+                            </label>
+                            <input type="number" class="form-control" id="kcPercent" placeholder="0" style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label>Дата расчета</label>
+                            <input type="date" class="form-control" id="calcDate">
+                        </div>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Фиксированный бонус</label>
+                            <input type="number" class="form-control" id="additionalBonus" value="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Бонус % от расчета</label>
+                            <input type="number" class="form-control" id="bonusPercentSalary" value="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Бонус % от продаж</label>
+                            <input type="number" class="form-control" id="bonusPercentSales" value="0" step="0.1">
+                        </div>
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Штраф</label>
+                            <input type="number" class="form-control" id="penaltyAmount" value="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Комментарий</label>
+                            <input type="text" class="form-control" id="calcComment" placeholder="Комментарий к расчету">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-success" onclick="calculateSalary()">
+                        <i>🧮</i> Рассчитать ЗП
+                    </button>
+
+                    <div id="calculationResult" style="margin-top: 20px;"></div>
+                </div>
+
+                <!-- История расчетов -->
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <h4>История расчетов</h4>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Оператор</th>
+                                    <th>Период</th>
+                                    <th>Продажи</th>
+                                    <th>Выкуп</th>
+                                    <th>ЗП</th>
+                                    <th>Мотивация</th>
+                                    <th>Дата</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="calculationsTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payments Section -->
+        <div id="payments" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Управление выплатами</h3>
+                    <button class="btn btn-primary" onclick="loadPayments()">
+                        <i>🔄</i> Обновить
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Оператор</th>
+                                <th>Период</th>
+                                <th>Продажи</th>
+                                <th>Выкуп</th>
+                                <th>Сумма</th>
+                                <th>Статус</th>
+                                <th>Дата оплаты</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="settings" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Настройки системы</h3>
+                </div>
+
+                <div class="tabs">
+                    <div class="tab active" onclick="showSettingsTab('main')">Основные</div>
+                    <div class="tab" onclick="showSettingsTab('motivation')">Мотивация</div>
+                    <div class="tab" onclick="showSettingsTab('trash')">Корзина</div>
+                </div>
+
+                <!-- Основные настройки -->
+                <div class="tab-content active" id="settingsMain">
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Автоматическое создание выплат</label>
+                            <select class="form-control" id="autoCreatePayments">
+                                <option value="true">Включено</option>
+                                <option value="false">Выключено</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Формат даты</label>
+                            <select class="form-control" id="dateFormat">
+                                <option value="ru-RU">ДД.ММ.ГГГГ</option>
+                                <option value="en-US">ММ/ДД/ГГГГ</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Мотивационные настройки -->
+                <div class="tab-content" id="settingsMotivation">
+                    <div class="card-header" style="padding-left: 0;">
+                        <h4>Мотивационные системы</h4>
+                        <button class="btn btn-success" onclick="showMotivationModal()">➕ Добавить систему</button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Название</th>
+                                    <th>Описание</th>
+                                    <th>Блоки</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="motivationsTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Корзина -->
+                <div class="tab-content" id="settingsTrash">
+                    <div class="card-header" style="padding-left: 0;">
+                        <h4>Корзина</h4>
+                        <button class="btn btn-primary" onclick="loadTrash()">🔄 Обновить</button>
+                    </div>
+                    <div class="trash-grid">
+                        <div>
+                            <h4>Операторы</h4>
+                            <div id="trashOperators"></div>
+                        </div>
+                        <div>
+                            <h4>Расчеты</h4>
+                            <div id="trashCalculations"></div>
+                        </div>
+                        <div>
+                            <h4>Выплаты</h4>
+                            <div id="trashPayments"></div>
+                        </div>
+                        <div>
+                            <h4>Мотивации</h4>
+                            <div id="trashMotivations"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальные окна -->
+    <div id="operatorModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="operatorModalTitle">Добавить оператора</h3>
+                <span class="close" onclick="closeModal('operatorModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="operatorId">
+                <div class="form-group">
+                    <label>ФИО оператора *</label>
+                    <input type="text" class="form-control" id="operatorName" placeholder="Введите ФИО оператора" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Тип ЗП</label>
+                        <select class="form-control" id="operatorSalaryType" onchange="toggleOperatorSettings()">
+                            <option value="progressive">Прогрессивная</option>
+                            <option value="fixed">Фиксированная</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Базовый процент *</label>
+                        <input type="number" class="form-control" id="operatorBasePercent" value="0" step="0.01" min="0" max="100">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Мотивация по умолчанию</label>
+                    <select class="form-control" id="operatorMotivation">
+                        <option value="">Не выбрано</option>
+                    </select>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Налоговый бонус *</label>
+                        <input type="number" class="form-control" id="operatorTaxBonus" value="0" step="0.1" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Статус</label>
+                        <select class="form-control" id="operatorStatus">
+                            <option value="1">Активен</option>
+                            <option value="0">Неактивен</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
+                    <button class="btn btn-secondary" onclick="closeModal('operatorModal')">
+                        <i>❌</i> Отмена
+                    </button>
+                    <button class="btn btn-success" onclick="saveOperator()">
+                        <i>💾</i> Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="motivationModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="motivationModalTitle">Новая мотивация</h3>
+                <span class="close" onclick="closeModal('motivationModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="motivationId">
+                <div class="form-group">
+                    <label>Название *</label>
+                    <input type="text" class="form-control" id="motivationName" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Тип системы</label>
+                        <select class="form-control" id="motivationType">
+                            <option value="composite">Комбинированная</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Статус</label>
+                        <select class="form-control" id="motivationStatus">
+                            <option value="1">Активна</option>
+                            <option value="0">Выключена</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea class="form-control" id="motivationDescription" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Блоки мотивации</label>
+                    <div id="motivationBlocks" class="bonus-levels"></div>
+                    <button class="btn btn-secondary" type="button" onclick="addMotivationBlock()">Добавить блок</button>
+                </div>
+                <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
+                    <button class="btn btn-secondary" onclick="closeModal('motivationModal')">Отмена</button>
+                    <button class="btn btn-success" onclick="saveMotivation()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="debug.js"></script>
+<script src="visual-debug.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
+
+
+
+
