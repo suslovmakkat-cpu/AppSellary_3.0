@@ -164,7 +164,7 @@ def calculate_salary(
              bonus_percent_sales, applied_motivation_id, applied_motivation_name,
              motivation_snapshot, calculation_breakdown, working_days_in_period,
              plan_target, plan_completion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 operator_id,
