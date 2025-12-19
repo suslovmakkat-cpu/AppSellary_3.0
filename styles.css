@@ -240,6 +240,11 @@ body {
     transition: all 0.3s;
 }
 
+.form-hint {
+    font-size: 0.9em;
+    color: #6c757d;
+}
+
 .form-control:focus {
     border-color: var(--primary);
     outline: none;
@@ -317,6 +322,7 @@ th, td {
     padding: 15px;
     text-align: left;
     border-bottom: 1px solid #eee;
+    white-space: normal;
 }
 
 th {
@@ -367,20 +373,25 @@ tr:hover {
 
 .modal-content {
     background: white;
-    margin: 5% auto;
+    margin: 0;
     padding: 30px;
     border-radius: 15px;
     width: 90%;
-    max-width: 600px;
+    max-width: 900px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     max-height: 90vh;
     overflow-y: auto;
+    position: absolute;
+    resize: both;
+    min-width: 380px;
+    min-height: 320px;
 }
 
 .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid #eee;
@@ -400,6 +411,20 @@ tr:hover {
 
 .close:hover {
     color: var(--danger);
+}
+
+.resize-handle {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    right: 8px;
+    bottom: 8px;
+    cursor: se-resize;
+    background: linear-gradient(135deg, transparent 50%, #dfe6e9 50%);
+}
+
+.modal-content.dragging {
+    cursor: move;
 }
 
 /* Alert Styles */

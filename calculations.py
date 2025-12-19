@@ -1,7 +1,8 @@
 import json
+from datetime import datetime
+
 from config import get_db_connection, log_action
 from motivation_engine import MotivationEngine, derive_amounts
-
 
 def ensure_calculation_columns(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(manual_calculations)").fetchall()}
@@ -128,7 +129,12 @@ def calculate_salary(
     bonus_from_sales = sales_value * (float(bonus_percent_sales or 0) / 100.0)
     subtotal += bonus_from_salary + bonus_from_sales
 
-    tax_bonus = subtotal * (float(operator["tax_bonus"] or 0) / 100.0)
+    motivation_tax_bonus = subtotal * (float(motivation_result.tax_bonus_percent) / 100.0)
+    subtotal += motivation_tax_bonus
+
+    tax_bonus_percent = float(operator["tax_bonus"] or 0)
+    salary_type = operator["salary_type"]
+    tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 and salary_type else 0
     total_salary = subtotal + tax_bonus
 
     breakdown = {
@@ -142,6 +148,7 @@ def calculate_salary(
         "manual_penalty": manual_penalty,
         "bonus_from_salary": bonus_from_salary,
         "bonus_from_sales": bonus_from_sales,
+        "motivation_tax_bonus": motivation_tax_bonus,
         "tax_bonus": tax_bonus,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
@@ -202,6 +209,7 @@ def calculate_salary(
         "derived_sales": sales_value,
         "derived_non_kc": non_kc_value,
         "applied_motivation": applied_motivation_name,
+        "motivation_tax_bonus": motivation_tax_bonus,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
     }

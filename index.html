@@ -398,6 +398,7 @@
                     <div class="form-group">
                         <label>Тип ЗП</label>
                         <select class="form-control" id="operatorSalaryType" onchange="toggleOperatorSettings()">
+                            <option value="">Не выбрано</option>
                             <option value="progressive">Прогрессивная</option>
                             <option value="fixed">Фиксированная</option>
                         </select>
@@ -425,6 +426,9 @@
                             <option value="0">Неактивен</option>
                         </select>
                     </div>
+                </div>
+                <div class="form-hint" id="operatorSalaryHint" style="display: none;">
+                    При нулевых значениях или невыбранном типе ЗП используется мотивация по умолчанию.
                 </div>
                 <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
                     <button class="btn btn-secondary" onclick="closeModal('operatorModal')">
@@ -468,6 +472,10 @@
                 <div class="form-group">
                     <label>Описание</label>
                     <textarea class="form-control" id="motivationDescription" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Налоговый бонус (%)</label>
+                    <input type="number" class="form-control" id="motivationTaxBonus" step="0.1" min="0" placeholder="0">
                 </div>
                 <div class="form-group">
                     <label>Блоки мотивации</label>

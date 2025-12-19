@@ -62,11 +62,15 @@ def api_get_operator(operator_id):
 @app.route('/api/operators', methods=['POST'])
 def api_add_operator():
     data = request.json
+    salary_type = data.get('salary_type') or None
+    base_percent = data.get('base_percent')
+    base_percent = None if base_percent in (None, 0, '') else base_percent
+    tax_bonus = data.get('tax_bonus', 0) or 0
     oid = add_operator(
         data['name'],
-        data.get('salary_type', 'progressive'),
-        data.get('base_percent'),
-        data.get('tax_bonus', 0),
+        salary_type,
+        base_percent,
+        tax_bonus,
         data.get('motivation_id')
     )
     return jsonify({'id': oid})
@@ -74,12 +78,16 @@ def api_add_operator():
 @app.route('/api/operators/<int:operator_id>', methods=['PUT'])
 def api_update_operator(operator_id):
     data = request.json
+    salary_type = data.get('salary_type') or None
+    base_percent = data.get('base_percent')
+    base_percent = None if base_percent in (None, 0, '') else base_percent
+    tax_bonus = data.get('tax_bonus', 0) or 0
     update_operator(
         operator_id,
         data['name'],
-        data['salary_type'],
-        data.get('base_percent'),
-        data.get('tax_bonus', 0),
+        salary_type,
+        base_percent,
+        tax_bonus,
         data.get('is_active', 1),
         data.get('motivation_id')
     )
@@ -91,24 +99,30 @@ def api_update_operator(operator_id):
 
 @app.route('/api/calculate', methods=['POST'])
 def api_calculate():
-    data = request.json
-    result = calculate_salary(
-        data['operator_id'],
-        data.get('kc_amount', 0),
-        data.get('non_kc_amount', 0),
-        data.get('sales_amount', 0),
-        data.get('redemption_percent'),
-        data.get('period_start'),
-        data.get('period_end'),
-        data.get('working_days_in_period', 0),
-        data.get('additional_bonus', 0),
-        data.get('penalty_amount', 0),
-        data.get('comment'),
-        save_to_db=True,
-        motivation_override_id=data.get('motivation_override_id'),
-        bonus_percent_salary=data.get('bonus_percent_salary', 0),
-        bonus_percent_sales=data.get('bonus_percent_sales', 0)
-    )
+    data = request.get_json(silent=True) or {}
+    if 'operator_id' not in data:
+        return jsonify({'error': 'operator_id is required'}), 400
+    try:
+        result = calculate_salary(
+            data['operator_id'],
+            data.get('kc_amount', 0),
+            data.get('non_kc_amount', 0),
+            data.get('sales_amount', 0),
+            data.get('redemption_percent'),
+            data.get('period_start'),
+            data.get('period_end'),
+            data.get('working_days_in_period', 0),
+            data.get('additional_bonus', 0),
+            data.get('penalty_amount', 0),
+            data.get('comment'),
+            save_to_db=True,
+            motivation_override_id=data.get('motivation_override_id'),
+            bonus_percent_salary=data.get('bonus_percent_salary', 0),
+            bonus_percent_sales=data.get('bonus_percent_sales', 0)
+        )
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
     if result:
         create_payment(
             data['operator_id'],
