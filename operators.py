@@ -1,7 +1,7 @@
-﻿from config import get_db_connection, log_action
 from datetime import datetime
 
-# =========================
+from config import get_db_connection, log_action
+
 # READ OPERATORS (SAFE)
 # =========================
 

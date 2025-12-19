@@ -1,5 +1,99 @@
 let cachedOperators = [];
 let cachedMotivations = [];
+const modalStates = {};
+
+function getModalStateKey(modalId) {
+    return `modal_state_${modalId}`;
+}
+
+function applyModalState(modalId, content) {
+    const saved = localStorage.getItem(getModalStateKey(modalId));
+    if (saved) {
+        try {
+            const state = JSON.parse(saved);
+            if (state.width) content.style.width = `${state.width}px`;
+            if (state.height) content.style.height = `${state.height}px`;
+            if (state.left !== undefined && state.top !== undefined) {
+                content.style.left = `${state.left}px`;
+                content.style.top = `${state.top}px`;
+                content.style.transform = 'none';
+            }
+        } catch (e) {
+            console.warn('Failed to parse modal state', e);
+        }
+    } else {
+        const defaultWidth = Math.min(700, window.innerWidth * 0.9);
+        const defaultHeight = Math.min(600, window.innerHeight * 0.9);
+        content.style.width = `${defaultWidth}px`;
+        content.style.left = `${(window.innerWidth - defaultWidth) / 2}px`;
+        content.style.top = `${(window.innerHeight - defaultHeight) / 2}px`;
+    }
+}
+
+function saveModalState(modalId, content) {
+    const rect = content.getBoundingClientRect();
+    modalStates[modalId] = {
+        width: rect.width,
+        height: rect.height,
+        left: rect.left,
+        top: rect.top,
+    };
+    localStorage.setItem(getModalStateKey(modalId), JSON.stringify(modalStates[modalId]));
+}
+
+function enableModalInteractions(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    const content = modal.querySelector('.modal-content');
+    const header = modal.querySelector('.modal-header');
+    if (!content || !header) return;
+
+    content.style.position = 'absolute';
+    applyModalState(modalId, content);
+
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    content.appendChild(handle);
+
+    let isDragging = false;
+    let isResizing = false;
+    let dragOffset = { x: 0, y: 0 };
+
+    header.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragOffset = { x: e.clientX - content.offsetLeft, y: e.clientY - content.offsetTop };
+        content.classList.add('dragging');
+    });
+
+    handle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        dragOffset = { x: content.offsetWidth - e.clientX, y: content.offsetHeight - e.clientY };
+        e.stopPropagation();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            const left = e.clientX - dragOffset.x;
+            const top = e.clientY - dragOffset.y;
+            content.style.left = `${Math.max(10, left)}px`;
+            content.style.top = `${Math.max(10, top)}px`;
+        } else if (isResizing) {
+            const width = e.clientX + dragOffset.x - content.offsetLeft;
+            const height = e.clientY + dragOffset.y - content.offsetTop;
+            if (width > 400) content.style.width = `${width}px`;
+            if (height > 300) content.style.height = `${height}px`;
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isDragging || isResizing) {
+            saveModalState(modalId, content);
+        }
+        isDragging = false;
+        isResizing = false;
+        content.classList.remove('dragging');
+    });
+}
 
 function showSection(sectionName) {
     document.querySelectorAll('.section').forEach(section => {
@@ -20,6 +114,12 @@ function showSection(sectionName) {
         };
         pageTitle.textContent = titles[sectionName] || 'Дашборд';
     }
+}
+
+function formatSalaryType(type) {
+    if (type === 'fixed') return 'Фиксированная';
+    if (type === 'progressive') return 'Прогрессивная';
+    return 'Не выбрано';
 }
 
 function closeModal(modalId) {
@@ -58,18 +158,33 @@ function showNotifications() {
 function showOperatorModal() {
     document.getElementById('operatorId').value = '';
     document.getElementById('operatorName').value = '';
-    document.getElementById('operatorSalaryType').value = 'progressive';
+    document.getElementById('operatorSalaryType').value = '';
     document.getElementById('operatorBasePercent').value = '0';
     document.getElementById('operatorTaxBonus').value = '0';
     document.getElementById('operatorStatus').value = '1';
     document.getElementById('operatorMotivation').value = '';
+    applyModalState('operatorModal', document.querySelector('#operatorModal .modal-content'));
     document.getElementById('operatorModal').style.display = 'block';
+    toggleOperatorSettings();
 }
 
 function toggleOperatorSettings() {
     const salaryType = document.getElementById('operatorSalaryType').value;
     const basePercentField = document.getElementById('operatorBasePercent');
+    const taxBonusField = document.getElementById('operatorTaxBonus');
+    const disableCustom = !salaryType;
     basePercentField.required = salaryType === 'fixed';
+    basePercentField.disabled = disableCustom;
+    taxBonusField.disabled = disableCustom;
+
+    const helper = document.getElementById('operatorSalaryHint');
+    if (helper) {
+        if (disableCustom || parseFloat(basePercentField.value || '0') === 0 || parseFloat(taxBonusField.value || '0') === 0) {
+            helper.style.display = 'block';
+        } else {
+            helper.style.display = 'none';
+        }
+    }
 }
 
 async function saveOperator() {
@@ -103,12 +218,14 @@ async function editOperator(operatorId) {
     const operator = await response.json();
     document.getElementById('operatorId').value = operator.id;
     document.getElementById('operatorName').value = operator.name;
-    document.getElementById('operatorSalaryType').value = operator.salary_type;
+    document.getElementById('operatorSalaryType').value = operator.salary_type || '';
     document.getElementById('operatorBasePercent').value = operator.base_percent || 0;
     document.getElementById('operatorTaxBonus').value = operator.tax_bonus || 0;
     document.getElementById('operatorStatus').value = operator.is_active;
     document.getElementById('operatorMotivation').value = operator.motivation_id || '';
+    applyModalState('operatorModal', document.querySelector('#operatorModal .modal-content'));
     document.getElementById('operatorModal').style.display = 'block';
+    toggleOperatorSettings();
 }
 
 function deriveAmounts() {
@@ -166,6 +283,10 @@ function deriveAmounts() {
         }
     }
 
+    if (salesVal !== null && kcVal !== null) {
+        nonKcVal = Math.max(salesVal - kcVal, 0);
+    }
+
     kcVal = kcVal === null ? 0 : kcVal;
     nonKcVal = nonKcVal === null ? 0 : nonKcVal;
     salesVal = salesVal === null ? kcVal + nonKcVal : salesVal;
@@ -214,11 +335,12 @@ async function calculateSalary(event) {
     const summary = document.getElementById('calculationResult');
     if (summary) {
         const planLine = result.plan_target && result.plan_target > 0 ? `<br>Выполнение плана: ${(result.plan_completion * 100).toFixed(1)}%` : '';
+        const taxLine = result.motivation_tax_bonus ? `<br>Налоговый бонус: ${result.motivation_tax_bonus.toLocaleString('ru-RU')} руб.` : '';
         summary.innerHTML = `
             <div class="alert alert-success">
                 Итоговая ЗП: <strong>${result.total_salary.toLocaleString('ru-RU')} руб.</strong><br>
                 Процент выкупа: ${result.redemption_percent.toFixed(1)}%<br>
-                Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}${planLine}
+                Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}${planLine}${taxLine}
             </div>`;
     }
     loadCalculations();
@@ -235,9 +357,9 @@ async function loadOperators() {
         operatorsTable.innerHTML = cachedOperators.map(op => `
             <tr>
                 <td>${op.name}</td>
-                <td>${op.salary_type === 'fixed' ? 'Фиксированная' : 'Прогрессивная'}</td>
-                <td>${op.base_percent || 0}%</td>
-                <td>${op.tax_bonus || 0}</td>
+                <td>${formatSalaryType(op.salary_type)}</td>
+                <td>${op.base_percent ? `${op.base_percent}%` : '—'}</td>
+                <td>${op.tax_bonus ? `${op.tax_bonus}%` : '—'}</td>
                 <td>${op.is_active ? '✅ Активен' : '❌ Неактивен'}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="editOperator(${op.id})">✏️</button>
@@ -356,7 +478,7 @@ async function loadDashboard() {
         activeOperators.innerHTML = activeOps.length > 0 ? activeOps.map(op => `
             <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 5px; border-left: 4px solid #3498db;">
                 <strong>${op.name}</strong><br>
-                <small>${op.salary_type === 'fixed' ? 'Фиксированная' : 'Прогрессивная'}</small>
+                <small>${formatSalaryType(op.salary_type)}</small>
             </div>`).join('') : '<div style="text-align: center; padding: 20px; color: #666;">Нет активных операторов</div>';
     }
     const recentPayments = document.getElementById('recentPayments');
@@ -381,7 +503,7 @@ async function loadMotivations() {
             const cfg = JSON.parse(configJson || '{}');
             const blocks = cfg.blocks || [];
             if (!blocks.length) return 'Блоки не заданы';
-            return blocks.map(b => {
+            const summary = blocks.map(b => {
                 const mode = b.apply_mode === 'one_of' ? 'один из' : 'совместно';
                 const titles = {
                     fixed_salary: 'Фикс. оклад',
@@ -394,6 +516,8 @@ async function loadMotivations() {
                 };
                 return `${titles[b.type] || 'Блок'} (${mode})`;
             }).join(', ');
+            const taxBonus = parseFloat(cfg.tax_bonus_percent || 0);
+            return taxBonus ? `${summary}. Налоговый бонус: ${taxBonus}%` : summary;
         } catch (e) {
             return 'Ошибка конфигурации';
         }
@@ -567,12 +691,15 @@ function showMotivationModal(motivation) {
     document.getElementById('motivationType').value = motivation ? motivation.motivation_type : 'composite';
     document.getElementById('motivationStatus').value = motivation && motivation.is_active === 0 ? '0' : '1';
     document.getElementById('motivationDescription').value = motivation ? (motivation.description || '') : '';
+    document.getElementById('motivationTaxBonus').value = 0;
+    applyModalState('motivationModal', document.querySelector('#motivationModal .modal-content'));
 
     const blocksContainer = document.getElementById('motivationBlocks');
     blocksContainer.innerHTML = '';
     if (motivation) {
         try {
             const cfg = JSON.parse(motivation.config_json || '{}');
+            document.getElementById('motivationTaxBonus').value = cfg.tax_bonus_percent || 0;
             (cfg.blocks || []).forEach(b => addMotivationBlock(b));
         } catch (e) {
             addMotivationBlock();
@@ -593,7 +720,8 @@ async function saveMotivation() {
     const motivationId = document.getElementById('motivationId').value;
     const type = document.getElementById('motivationType').value;
     const blocks = collectBlocks();
-    const config = JSON.stringify({ blocks });
+    const taxBonus = parseFloat(document.getElementById('motivationTaxBonus').value) || 0;
+    const config = JSON.stringify({ blocks, tax_bonus_percent: taxBonus });
     const payload = {
         name: document.getElementById('motivationName').value,
         motivation_type: type,
@@ -683,6 +811,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCalculations();
     loadPayments();
     loadDashboard();
+    enableModalInteractions('operatorModal');
+    enableModalInteractions('motivationModal');
     ['kcAmount', 'nonKcAmount', 'salesAmount'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', deriveAmounts);
