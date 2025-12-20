@@ -339,6 +339,12 @@ def api_update_correction(calc_id):
         return jsonify({'error': 'not found'}), 404
     return jsonify(result)
 
+
+@app.route('/api/corrections/<int:calc_id>', methods=['DELETE'])
+def api_delete_correction(calc_id):
+    soft_delete_calculation(calc_id)
+    return jsonify({'status': 'ok'})
+
 # =========================
 # MOTIVATIONS (NEW)
 # =========================
