@@ -63,7 +63,10 @@ function enableModalInteractions(modalId) {
     let isResizing = false;
     let dragOffset = { x: 0, y: 0 };
 
+    header.classList.add('draggable-header');
+
     header.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.close')) return;
         isDragging = true;
         dragOffset = { x: e.clientX - content.offsetLeft, y: e.clientY - content.offsetTop };
         content.classList.add('dragging');
@@ -380,8 +383,8 @@ async function loadOperators() {
             <tr>
                 <td>${op.name}</td>
                 <td>${op.tax_bonus ? `${op.tax_bonus}%` : '—'}</td>
-                <td>${op.is_active ? '✅ Активен' : '❌ Неактивен'}</td>
                 <td>${motivationTitle}</td>
+                <td>${op.is_active ? '✅ Активен' : '❌ Неактивен'}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="editOperator(${op.id})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="trashOperator(${op.id})">🗑️</button>
