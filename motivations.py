@@ -44,6 +44,7 @@ def get_motivation(motivation_id):
 def add_motivation(name, motivation_type, config_json, description=None):
     # config_json must be valid JSON string
     json.loads(config_json)
+    motivation_type = motivation_type or "composite"
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -64,6 +65,7 @@ def add_motivation(name, motivation_type, config_json, description=None):
 
 def update_motivation(motivation_id, name, motivation_type, config_json, description=None, is_active=1):
     json.loads(config_json)
+    motivation_type = motivation_type or "composite"
 
     conn = get_db_connection()
     conn.execute(

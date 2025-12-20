@@ -11,18 +11,21 @@ def create_payment(
     total_salary,
     period_start=None,
     period_end=None,
-    sales_amount=0
+    sales_amount=0,
+    calculation_id=None,
+    correction_date=None
 ):
     conn = get_db_connection()
 
     existing = conn.execute(
         '''
         SELECT id FROM payments
-        WHERE operator_id = ?
-          AND calculation_date = ?
-          AND is_deleted = 0
+        WHERE is_deleted = 0 AND (
+            (calculation_id IS NOT NULL AND calculation_id = COALESCE(?, calculation_id))
+            OR (operator_id = ? AND calculation_date = ?)
+        )
         ''',
-        (operator_id, calculation_date)
+        (calculation_id, operator_id, calculation_date)
     ).fetchone()
 
     if existing:
@@ -34,8 +37,8 @@ def create_payment(
         '''
         INSERT INTO payments
         (operator_id, calculation_date, total_salary, is_paid,
-         period_start, period_end, sales_amount)
-        VALUES (?, ?, ?, 0, ?, ?, ?)
+         period_start, period_end, sales_amount, calculation_id, correction_date)
+        VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
         ''',
         (
             operator_id,
@@ -43,7 +46,9 @@ def create_payment(
             total_salary,
             period_start,
             period_end,
-            sales_amount
+            sales_amount,
+            calculation_id,
+            correction_date
         )
     )
 
@@ -97,6 +102,16 @@ def get_payments(operator_id=None, start_date=None, end_date=None, include_delet
     return rows
 
 
+def get_payment_by_id(payment_id):
+    conn = get_db_connection()
+    row = conn.execute(
+        'SELECT * FROM payments WHERE id = ?',
+        (payment_id,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
 # =========================
 # UPDATE PAYMENT STATUS
 # =========================
@@ -123,6 +138,51 @@ def update_payment_status(payment_id, is_paid):
         'payment_status_updated',
         f'Payment {payment_id} status: {status_text}'
     )
+
+
+def update_payment(
+    payment_id,
+    operator_id,
+    calculation_date,
+    total_salary,
+    period_start=None,
+    period_end=None,
+    sales_amount=0,
+    is_paid=False,
+    additional_bonus=0,
+    penalty_amount=0,
+    correction_date=None,
+    calculation_id=None,
+):
+    conn = get_db_connection()
+    payment_date = datetime.now().strftime('%Y-%m-%d') if is_paid else None
+    conn.execute(
+        '''
+        UPDATE payments
+        SET operator_id = ?, calculation_date = ?, total_salary = ?, period_start = ?, period_end = ?,
+            sales_amount = ?, is_paid = ?, payment_date = ?, additional_bonus = ?, penalty_amount = ?,
+            correction_date = COALESCE(?, correction_date), calculation_id = ?
+        WHERE id = ? AND is_deleted = 0
+        ''',
+        (
+            operator_id,
+            calculation_date,
+            total_salary,
+            period_start,
+            period_end,
+            sales_amount,
+            1 if is_paid else 0,
+            payment_date,
+            additional_bonus,
+            penalty_amount,
+            correction_date,
+            calculation_id,
+            payment_id,
+        )
+    )
+    conn.commit()
+    conn.close()
+    log_action('payment_updated', f'Payment {payment_id} updated', operator_id)
 
 
 # =========================

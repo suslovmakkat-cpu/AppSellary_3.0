@@ -110,16 +110,12 @@ function showSection(sectionName) {
             operators: 'Операторы',
             calculations: 'Расчеты ЗП',
             payments: 'Выплаты',
+            corrections: 'Корректировка расчетов',
             settings: 'Настройки'
         };
         pageTitle.textContent = titles[sectionName] || 'Дашборд';
     }
-}
-
-function formatSalaryType(type) {
-    if (type === 'fixed') return 'Фиксированная';
-    if (type === 'progressive') return 'Прогрессивная';
-    return 'Не выбрано';
+    if (sectionName === 'corrections') loadCorrections();
 }
 
 function closeModal(modalId) {
@@ -158,41 +154,17 @@ function showNotifications() {
 function showOperatorModal() {
     document.getElementById('operatorId').value = '';
     document.getElementById('operatorName').value = '';
-    document.getElementById('operatorSalaryType').value = '';
-    document.getElementById('operatorBasePercent').value = '0';
     document.getElementById('operatorTaxBonus').value = '0';
     document.getElementById('operatorStatus').value = '1';
     document.getElementById('operatorMotivation').value = '';
     applyModalState('operatorModal', document.querySelector('#operatorModal .modal-content'));
     document.getElementById('operatorModal').style.display = 'block';
-    toggleOperatorSettings();
-}
-
-function toggleOperatorSettings() {
-    const salaryType = document.getElementById('operatorSalaryType').value;
-    const basePercentField = document.getElementById('operatorBasePercent');
-    const taxBonusField = document.getElementById('operatorTaxBonus');
-    const disableCustom = !salaryType;
-    basePercentField.required = salaryType === 'fixed';
-    basePercentField.disabled = disableCustom;
-    taxBonusField.disabled = disableCustom;
-
-    const helper = document.getElementById('operatorSalaryHint');
-    if (helper) {
-        if (disableCustom || parseFloat(basePercentField.value || '0') === 0 || parseFloat(taxBonusField.value || '0') === 0) {
-            helper.style.display = 'block';
-        } else {
-            helper.style.display = 'none';
-        }
-    }
 }
 
 async function saveOperator() {
     const operatorId = document.getElementById('operatorId').value;
     const payload = {
         name: document.getElementById('operatorName').value,
-        salary_type: document.getElementById('operatorSalaryType').value,
-        base_percent: parseFloat(document.getElementById('operatorBasePercent').value) || 0,
         tax_bonus: parseFloat(document.getElementById('operatorTaxBonus').value) || 0,
         is_active: parseInt(document.getElementById('operatorStatus').value, 10),
         motivation_id: document.getElementById('operatorMotivation').value || null
@@ -218,66 +190,52 @@ async function editOperator(operatorId) {
     const operator = await response.json();
     document.getElementById('operatorId').value = operator.id;
     document.getElementById('operatorName').value = operator.name;
-    document.getElementById('operatorSalaryType').value = operator.salary_type || '';
-    document.getElementById('operatorBasePercent').value = operator.base_percent || 0;
     document.getElementById('operatorTaxBonus').value = operator.tax_bonus || 0;
     document.getElementById('operatorStatus').value = operator.is_active;
     document.getElementById('operatorMotivation').value = operator.motivation_id || '';
     applyModalState('operatorModal', document.querySelector('#operatorModal .modal-content'));
     document.getElementById('operatorModal').style.display = 'block';
-    toggleOperatorSettings();
 }
 
-function deriveAmounts() {
-    const kcField = document.getElementById('kcAmount');
-    const nonKcField = document.getElementById('nonKcAmount');
-    const salesField = document.getElementById('salesAmount');
-    const percentField = document.getElementById('kcPercent');
-
-    const kcAmount = parseFloat(kcField.value);
-    const nonKcAmount = parseFloat(nonKcField.value);
-    const salesAmount = parseFloat(salesField.value);
-    const redemptionPercent = parseFloat(percentField.value);
-
-    const values = {
-        kc: isNaN(kcAmount) ? null : kcAmount,
-        nonKc: isNaN(nonKcAmount) ? null : nonKcAmount,
-        sales: isNaN(salesAmount) ? null : salesAmount,
-        percent: isNaN(redemptionPercent) ? null : redemptionPercent
+function autoCalculateQuartet(kcField, nonKcField, salesField, percentField) {
+    const parseVal = (field) => {
+        if (!field) return null;
+        const val = parseFloat(field.value);
+        return isNaN(val) ? null : val;
     };
 
-    let kcVal = values.kc;
-    let nonKcVal = values.nonKc;
-    let salesVal = values.sales;
-    let percentVal = values.percent;
+    let kcVal = parseVal(kcField);
+    let nonKcVal = parseVal(nonKcField);
+    let salesVal = parseVal(salesField);
+    let percentVal = parseVal(percentField);
 
-    const provided = [values.kc, values.nonKc, values.sales, values.percent].filter(v => v !== null).length;
+    const provided = [kcVal, nonKcVal, salesVal, percentVal].filter(v => v !== null).length;
 
     if (provided >= 2) {
-        if (values.kc !== null && values.sales !== null) {
+        if (kcVal !== null && salesVal !== null) {
             nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (values.kc !== null && values.nonKc !== null) {
+        } else if (kcVal !== null && nonKcVal !== null) {
             salesVal = kcVal + nonKcVal;
-        } else if (values.sales !== null && values.nonKc !== null) {
+        } else if (salesVal !== null && nonKcVal !== null) {
             kcVal = Math.max(salesVal - nonKcVal, 0);
-        } else if (values.sales !== null && values.percent !== null) {
+        } else if (salesVal !== null && percentVal !== null) {
             kcVal = salesVal * percentVal / 100;
             nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (values.kc !== null && values.percent !== null && percentVal !== 0) {
+        } else if (kcVal !== null && percentVal !== null && percentVal !== 0) {
             salesVal = kcVal * 100 / percentVal;
             nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (values.nonKc !== null && values.percent !== null && percentVal < 100) {
+        } else if (nonKcVal !== null && percentVal !== null && percentVal < 100) {
             salesVal = nonKcVal * 100 / (100 - percentVal);
             kcVal = Math.max(salesVal - nonKcVal, 0);
         }
     } else if (provided === 1) {
-        if (values.sales !== null) {
+        if (salesVal !== null) {
             kcVal = salesVal;
             nonKcVal = 0;
-        } else if (values.kc !== null) {
+        } else if (kcVal !== null) {
             salesVal = kcVal;
             nonKcVal = 0;
-        } else if (values.nonKc !== null) {
+        } else if (nonKcVal !== null) {
             salesVal = nonKcVal;
             kcVal = 0;
         }
@@ -292,10 +250,28 @@ function deriveAmounts() {
     salesVal = salesVal === null ? kcVal + nonKcVal : salesVal;
     percentVal = salesVal > 0 ? (kcVal / salesVal) * 100 : 0;
 
-    if (values.kc === null) kcField.value = kcVal;
-    if (values.nonKc === null) nonKcField.value = nonKcVal;
-    if (values.sales === null) salesField.value = salesVal;
+    if (kcField) kcField.value = kcVal.toFixed(2);
+    if (nonKcField) nonKcField.value = nonKcVal.toFixed(2);
+    if (salesField) salesField.value = salesVal.toFixed(2);
     if (percentField) percentField.value = percentVal.toFixed(1);
+}
+
+function deriveAmounts() {
+    autoCalculateQuartet(
+        document.getElementById('kcAmount'),
+        document.getElementById('nonKcAmount'),
+        document.getElementById('salesAmount'),
+        document.getElementById('kcPercent')
+    );
+}
+
+function deriveCorrectionAmounts() {
+    autoCalculateQuartet(
+        document.getElementById('correctionKcAmount'),
+        document.getElementById('correctionNonKcAmount'),
+        document.getElementById('correctionSalesAmount'),
+        document.getElementById('correctionKcPercent')
+    );
 }
 
 function setCalculationEditingState(calculationId) {
@@ -345,7 +321,8 @@ async function calculateSalary(event) {
         comment: document.getElementById('calcComment').value,
         motivation_override_id: document.getElementById('calcMotivationOverride').value || null,
         bonus_percent_salary: parseFloat(document.getElementById('bonusPercentSalary').value) || 0,
-        bonus_percent_sales: parseFloat(document.getElementById('bonusPercentSales').value) || 0
+        bonus_percent_sales: parseFloat(document.getElementById('bonusPercentSales').value) || 0,
+        include_redemption_percent: document.getElementById('includeRedemption').checked
     };
     const calcIdField = document.getElementById('calcEditingId');
     const isEditing = calcIdField && calcIdField.value;
@@ -394,8 +371,6 @@ async function loadOperators() {
         operatorsTable.innerHTML = cachedOperators.map(op => `
             <tr>
                 <td>${op.name}</td>
-                <td>${formatSalaryType(op.salary_type)}</td>
-                <td>${op.base_percent ? `${op.base_percent}%` : '—'}</td>
                 <td>${op.tax_bonus ? `${op.tax_bonus}%` : '—'}</td>
                 <td>${op.is_active ? '✅ Активен' : '❌ Неактивен'}</td>
                 <td>
@@ -412,6 +387,10 @@ async function loadOperators() {
     if (operatorMotivation && cachedMotivations) {
         operatorMotivation.innerHTML = `<option value=''>Не выбрано</option>` +
             cachedMotivations.filter(m => m.is_deleted === 0 && m.is_active === 1).map(m => `<option value='${m.id}'>${m.name}</option>`).join('');
+    }
+    const dashboardOperator = document.getElementById('dashboardOperator');
+    if (dashboardOperator) {
+        dashboardOperator.innerHTML = `<option value=''>Все операторы</option>` + cachedOperators.map(op => `<option value='${op.id}'>${op.name}</option>`).join('');
     }
 }
 
@@ -442,6 +421,7 @@ async function loadCalculations() {
                 <td>${(calc.total_salary || 0).toLocaleString('ru-RU')} руб.</td>
                 <td>${calc.applied_motivation_name || '—'}</td>
                 <td>${calcDate}</td>
+                <td>${formatDate(calc.correction_date)}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="editCalculation(${calc.id})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="trashCalculation(${calc.id})">🗑️</button>
@@ -459,6 +439,7 @@ async function loadPayments() {
         table.innerHTML = payments.map(payment => {
             const paymentDate = payment.calculation_date ? new Date(payment.calculation_date).toLocaleDateString('ru-RU') : '—';
             const paidDate = payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('ru-RU') : '—';
+            const correctionDate = payment.correction_date ? new Date(payment.correction_date).toLocaleDateString('ru-RU') : '—';
             return `<tr>
                 <td>${payment.operator_name || '—'}</td>
                 <td>${payment.period_start || '—'}</td>
@@ -467,7 +448,12 @@ async function loadPayments() {
                 <td>${payment.total_salary ? payment.total_salary.toLocaleString('ru-RU') + ' руб.' : '0 руб.'}</td>
                 <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${payment.is_paid ? 'checked' : ''} onchange="updatePaymentStatus(${payment.id}, this.checked)"> <small>${payment.is_paid ? 'Выплачено' : 'Ожидает'}</small></div></td>
                 <td>${paidDate}</td>
-                <td><button class="btn btn-sm btn-info" onclick="viewPaymentDetails(${payment.id})">👁️</button></td>
+                <td>${correctionDate}</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="viewPaymentDetails(${payment.id})">👁️</button>
+                    <button class="btn btn-sm btn-warning" onclick="editPayment(${payment.id})">✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePayment(${payment.id})">🗑️</button>
+                </td>
             </tr>`;
         }).join('');
     }
@@ -515,7 +501,7 @@ async function loadDashboard() {
         activeOperators.innerHTML = activeOps.length > 0 ? activeOps.map(op => `
             <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 5px; border-left: 4px solid #3498db;">
                 <strong>${op.name}</strong><br>
-                <small>${formatSalaryType(op.salary_type)}</small>
+                <small>Налоговый бонус: ${op.tax_bonus || 0}%</small>
             </div>`).join('') : '<div style="text-align: center; padding: 20px; color: #666;">Нет активных операторов</div>';
     }
     const recentPayments = document.getElementById('recentPayments');
@@ -528,6 +514,59 @@ async function loadDashboard() {
                 <small style="color: #666;">${payment.is_paid ? '✅ Выплачено' : '⏳ Ожидает'}</small>
             </div>`).join('') : '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о выплатах</div>';
     }
+    refreshDashboardChart();
+}
+
+function renderDashboardChart(labels, values) {
+    const container = document.getElementById('dashboardChart');
+    if (!container) return;
+    const normalizedValues = (values || []).map(v => Number(v) || 0);
+    if (!labels || labels.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#666;">Нет данных для отображения</div>';
+        return;
+    }
+    const maxVal = Math.max(...normalizedValues, 1);
+    const bars = labels.map((label, idx) => {
+        const height = Math.max((normalizedValues[idx] / maxVal) * 180, 5);
+        return `<div style="flex:1; text-align:center;">
+            <div style="background:#4e73df; height:${height}px; margin: 0 6px; border-radius:4px;"></div>
+            <div style="font-size:12px; margin-top:4px; color:#555;">${label}</div>
+        </div>`;
+    }).join('');
+    container.innerHTML = `<div style="display:flex; align-items:flex-end; height:200px;">${bars}</div>`;
+}
+
+async function refreshDashboardChart() {
+    const metric = document.getElementById('dashboardMetric')?.value || 'sales';
+    const operatorId = document.getElementById('dashboardOperator')?.value || '';
+    const period = document.getElementById('dashboardPeriod')?.value || 'week';
+    let start = document.getElementById('dashboardStart')?.value;
+    let end = document.getElementById('dashboardEnd')?.value;
+    const today = new Date();
+    if (period !== 'custom') {
+        const endDate = today.toISOString().slice(0, 10);
+        let startDate = endDate;
+        if (period === 'week') {
+            const d = new Date();
+            d.setDate(d.getDate() - 7);
+            startDate = d.toISOString().slice(0, 10);
+        } else if (period === 'month') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            startDate = d.toISOString().slice(0, 10);
+        }
+        start = startDate;
+        end = endDate;
+        if (document.getElementById('dashboardStart')) document.getElementById('dashboardStart').value = startDate;
+        if (document.getElementById('dashboardEnd')) document.getElementById('dashboardEnd').value = endDate;
+    }
+    const params = new URLSearchParams({ metric });
+    if (operatorId) params.append('operator_id', operatorId);
+    if (start) params.append('start_date', start);
+    if (end) params.append('end_date', end);
+    const response = await fetch(`/api/dashboard/series?${params.toString()}`);
+    const data = await response.json();
+    renderDashboardChart(data.labels || [], data.values || []);
 }
 
 async function loadMotivations() {
@@ -553,8 +592,7 @@ async function loadMotivations() {
                 };
                 return `${titles[b.type] || 'Блок'} (${mode})`;
             }).join(', ');
-            const taxBonus = parseFloat(cfg.tax_bonus_percent || 0);
-            return taxBonus ? `${summary}. Налоговый бонус: ${taxBonus}%` : summary;
+            return summary;
         } catch (e) {
             return 'Ошибка конфигурации';
         }
@@ -725,10 +763,8 @@ function collectBlocks() {
 function showMotivationModal(motivation) {
     document.getElementById('motivationId').value = motivation ? motivation.id : '';
     document.getElementById('motivationName').value = motivation ? motivation.name : '';
-    document.getElementById('motivationType').value = motivation ? motivation.motivation_type : 'composite';
     document.getElementById('motivationStatus').value = motivation && motivation.is_active === 0 ? '0' : '1';
     document.getElementById('motivationDescription').value = motivation ? (motivation.description || '') : '';
-    document.getElementById('motivationTaxBonus').value = 0;
     applyModalState('motivationModal', document.querySelector('#motivationModal .modal-content'));
 
     const blocksContainer = document.getElementById('motivationBlocks');
@@ -736,7 +772,6 @@ function showMotivationModal(motivation) {
     if (motivation) {
         try {
             const cfg = JSON.parse(motivation.config_json || '{}');
-            document.getElementById('motivationTaxBonus').value = cfg.tax_bonus_percent || 0;
             (cfg.blocks || []).forEach(b => addMotivationBlock(b));
         } catch (e) {
             addMotivationBlock();
@@ -755,13 +790,11 @@ async function editMotivation(motivationId) {
 
 async function saveMotivation() {
     const motivationId = document.getElementById('motivationId').value;
-    const type = document.getElementById('motivationType').value;
     const blocks = collectBlocks();
-    const taxBonus = parseFloat(document.getElementById('motivationTaxBonus').value) || 0;
-    const config = JSON.stringify({ blocks, tax_bonus_percent: taxBonus });
+    const config = JSON.stringify({ blocks });
     const payload = {
         name: document.getElementById('motivationName').value,
-        motivation_type: type,
+        motivation_type: 'composite',
         config_json: config,
         description: document.getElementById('motivationDescription').value,
         is_active: parseInt(document.getElementById('motivationStatus').value, 10)
@@ -817,6 +850,83 @@ async function deletePaymentForever(id) { await fetch(`/api/trash/payment/${id}/
 async function deleteCalculationForever(id) { await fetch(`/api/trash/calculation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
 async function deleteMotivationForever(id) { await fetch(`/api/trash/motivation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
 
+async function loadCorrections() {
+    const response = await fetch('/api/corrections');
+    const corrections = await response.json();
+    const table = document.getElementById('correctionsTable');
+    const formatDate = (val) => {
+        if (!val) return '—';
+        const parsed = new Date(val);
+        return isNaN(parsed) ? val : parsed.toLocaleDateString('ru-RU');
+    };
+    if (table) {
+        table.innerHTML = corrections.map(item => {
+            const payment = item.payment || {};
+            const period = `${formatDate(item.period_start)}${item.period_end ? ' - ' + formatDate(item.period_end) : ''}`;
+            const correctionDate = item.correction_date || payment.correction_date;
+            return `<tr>
+                <td>${item.operator_name || ''}</td>
+                <td>${period}</td>
+                <td>${(item.total_salary || 0).toLocaleString('ru-RU')} руб.</td>
+                <td>${payment.total_salary ? payment.total_salary.toLocaleString('ru-RU') + ' руб.' : '—'}</td>
+                <td>${formatDate(correctionDate)}</td>
+                <td><button class="btn btn-sm btn-warning" onclick="openCorrection(${item.id})">✏️</button></td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+async function openCorrection(calcId) {
+    const response = await fetch(`/api/calculations/${calcId}`);
+    const calc = await response.json();
+    if (!calc || !calc.id) return;
+    document.getElementById('correctionCalcId').value = calc.id;
+    const operatorSelect = document.getElementById('correctionOperator');
+    if (operatorSelect) {
+        operatorSelect.innerHTML = cachedOperators.map(op => `<option value='${op.id}'>${op.name}</option>`).join('');
+        operatorSelect.value = calc.operator_id;
+    }
+    document.getElementById('correctionKcAmount').value = calc.kc_amount || 0;
+    document.getElementById('correctionNonKcAmount').value = calc.non_kc_amount || 0;
+    document.getElementById('correctionSalesAmount').value = calc.sales_amount || 0;
+    document.getElementById('correctionKcPercent').value = calc.redemption_percent || 0;
+    document.getElementById('correctionBonus').value = calc.additional_bonus || 0;
+    document.getElementById('correctionPenalty').value = calc.penalty_amount || 0;
+    document.getElementById('correctionComment').value = calc.comment || '';
+    document.getElementById('correctionIncludeRedemption').checked = calc.include_redemption_percent !== 0;
+    document.getElementById('correctionTotal').value = calc.total_salary || 0;
+    deriveCorrectionAmounts();
+    document.getElementById('correctionModal').style.display = 'block';
+}
+
+async function saveCorrection() {
+    const calcId = document.getElementById('correctionCalcId').value;
+    const payload = {
+        operator_id: parseInt(document.getElementById('correctionOperator').value, 10),
+        kc_amount: parseFloat(document.getElementById('correctionKcAmount').value) || 0,
+        non_kc_amount: parseFloat(document.getElementById('correctionNonKcAmount').value) || 0,
+        sales_amount: parseFloat(document.getElementById('correctionSalesAmount').value) || 0,
+        redemption_percent: parseFloat(document.getElementById('correctionKcPercent').value) || 0,
+        additional_bonus: parseFloat(document.getElementById('correctionBonus').value) || 0,
+        penalty_amount: parseFloat(document.getElementById('correctionPenalty').value) || 0,
+        comment: document.getElementById('correctionComment').value,
+        include_redemption_percent: document.getElementById('correctionIncludeRedemption').checked
+    };
+    const response = await fetch(`/api/corrections/${calcId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (result && result.total_salary !== undefined) {
+        document.getElementById('correctionTotal').value = result.total_salary;
+    }
+    loadCalculations();
+    loadPayments();
+    loadCorrections();
+    closeModal('correctionModal');
+}
+
 function onOperatorChange() {
     const operatorId = document.getElementById('calcOperator').value;
     if (!operatorId) return;
@@ -848,6 +958,8 @@ async function editCalculation(calculationId) {
     document.getElementById('bonusPercentSales').value = calc.bonus_percent_sales || 0;
     document.getElementById('penaltyAmount').value = calc.penalty_amount || calc.manual_penalty || 0;
     document.getElementById('calcComment').value = calc.comment || '';
+    const includeToggle = document.getElementById('includeRedemption');
+    if (includeToggle) includeToggle.checked = calc.include_redemption_percent !== 0;
 
     deriveAmounts();
     setCalculationEditingState(calculationId);
@@ -865,6 +977,50 @@ async function viewPaymentDetails(paymentId) {
     alert(details);
 }
 
+async function editPayment(paymentId) {
+    const response = await fetch(`/api/payments/${paymentId}`);
+    const payment = await response.json();
+    if (!payment || !payment.id) return;
+    document.getElementById('paymentId').value = payment.id;
+    const operatorSelect = document.getElementById('paymentOperator');
+    if (operatorSelect) {
+        operatorSelect.innerHTML = cachedOperators.map(op => `<option value='${op.id}'>${op.name}</option>`).join('');
+        operatorSelect.value = payment.operator_id;
+    }
+    document.getElementById('paymentDate').value = payment.calculation_date || '';
+    document.getElementById('paymentPeriodStart').value = payment.period_start || '';
+    document.getElementById('paymentPeriodEnd').value = payment.period_end || '';
+    document.getElementById('paymentSales').value = payment.sales_amount || 0;
+    document.getElementById('paymentTotal').value = payment.total_salary || 0;
+    document.getElementById('paymentIsPaid').checked = payment.is_paid === 1;
+    document.getElementById('paymentModal').style.display = 'block';
+}
+
+async function savePaymentEdit() {
+    const id = document.getElementById('paymentId').value;
+    const payload = {
+        operator_id: parseInt(document.getElementById('paymentOperator').value, 10),
+        calculation_date: document.getElementById('paymentDate').value,
+        period_start: document.getElementById('paymentPeriodStart').value,
+        period_end: document.getElementById('paymentPeriodEnd').value,
+        sales_amount: parseFloat(document.getElementById('paymentSales').value) || 0,
+        total_salary: parseFloat(document.getElementById('paymentTotal').value) || 0,
+        is_paid: document.getElementById('paymentIsPaid').checked,
+    };
+    await fetch(`/api/payments/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    closeModal('paymentModal');
+    loadPayments();
+}
+
+async function deletePayment(paymentId) {
+    await fetch(`/api/payments/${paymentId}`, { method: 'DELETE' });
+    loadPayments();
+}
+
 async function updatePaymentStatusById(paymentId, isPaid) {
     await updatePaymentStatus(paymentId, isPaid);
 }
@@ -878,9 +1034,19 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDashboard();
     enableModalInteractions('operatorModal');
     enableModalInteractions('motivationModal');
+    enableModalInteractions('paymentModal');
+    enableModalInteractions('correctionModal');
     setCalculationEditingState(null);
-    ['kcAmount', 'nonKcAmount', 'salesAmount'].forEach(id => {
+    ['kcAmount', 'nonKcAmount', 'salesAmount', 'kcPercent'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', deriveAmounts);
+    });
+    ['correctionKcAmount', 'correctionNonKcAmount', 'correctionSalesAmount', 'correctionKcPercent'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', deriveCorrectionAmounts);
+    });
+    ['dashboardMetric', 'dashboardOperator', 'dashboardPeriod', 'dashboardStart', 'dashboardEnd'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', refreshDashboardChart);
     });
 });
