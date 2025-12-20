@@ -2,7 +2,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 
-from calculations import calculate_salary, get_calculations_with_filters
+from calculations import calculate_salary, get_calculations_with_filters, update_calculation
 from operators import (
     get_all_operators, get_operator, add_operator, update_operator,
     soft_delete_operator, restore_operator, get_deleted_operators,
@@ -130,7 +130,7 @@ def api_calculate():
             result['total_salary'],
             data.get('period_start'),
             data.get('period_end'),
-            data.get('sales_amount', 0)
+            result.get('derived_sales', data.get('sales_amount', 0))
         )
     return jsonify(result or {'error': 'not found'})
 
@@ -153,6 +153,38 @@ def api_get_calculation(calc_id):
     ).fetchone()
     conn.close()
     return jsonify(dict(row) if row else {})
+
+
+@app.route('/api/calculations/<int:calc_id>', methods=['PUT'])
+def api_update_calculation(calc_id):
+    data = request.get_json(silent=True) or {}
+    if 'operator_id' not in data:
+        return jsonify({'error': 'operator_id is required'}), 400
+    try:
+        result = update_calculation(
+            calc_id,
+            data['operator_id'],
+            data.get('kc_amount', 0),
+            data.get('non_kc_amount', 0),
+            data.get('sales_amount', 0),
+            data.get('redemption_percent'),
+            data.get('period_start'),
+            data.get('period_end'),
+            data.get('working_days_in_period', 0),
+            data.get('additional_bonus', 0),
+            data.get('penalty_amount', 0),
+            data.get('comment'),
+            data.get('motivation_override_id'),
+            data.get('bonus_percent_salary', 0),
+            data.get('bonus_percent_sales', 0)
+        )
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    if not result:
+        return jsonify({'error': 'not found'}), 404
+
+    return jsonify(result)
 
 # =========================
 # PAYMENTS
