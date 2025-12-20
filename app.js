@@ -67,9 +67,13 @@ function enableModalInteractions(modalId) {
 
     header.addEventListener('mousedown', (e) => {
         if (e.target.closest('.close')) return;
+        if (e.button !== 0) return;
+        const rect = content.getBoundingClientRect();
         isDragging = true;
-        dragOffset = { x: e.clientX - content.offsetLeft, y: e.clientY - content.offsetTop };
+        dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         content.classList.add('dragging');
+        header.classList.add('dragging');
+        document.body.classList.add('modal-dragging');
     });
 
     handle.addEventListener('mousedown', (e) => {
@@ -84,6 +88,7 @@ function enableModalInteractions(modalId) {
             const top = e.clientY - dragOffset.y;
             content.style.left = `${Math.max(10, left)}px`;
             content.style.top = `${Math.max(10, top)}px`;
+            e.preventDefault();
         } else if (isResizing) {
             const width = e.clientX + dragOffset.x - content.offsetLeft;
             const height = e.clientY + dragOffset.y - content.offsetTop;
@@ -99,6 +104,8 @@ function enableModalInteractions(modalId) {
         isDragging = false;
         isResizing = false;
         content.classList.remove('dragging');
+        header.classList.remove('dragging');
+        document.body.classList.remove('modal-dragging');
     });
 }
 
@@ -110,6 +117,10 @@ function showSection(sectionName) {
     if (target) {
         target.style.display = 'block';
     }
+    document.querySelectorAll('.nav-item').forEach(item => {
+        const matches = item.dataset.section === sectionName;
+        item.classList.toggle('active', matches);
+    });
     const pageTitle = document.getElementById('pageTitle');
     if (pageTitle) {
         const titles = {
@@ -219,20 +230,21 @@ function autoCalculateQuartet(kcField, nonKcField, salesField, percentField) {
     const provided = [kcVal, nonKcVal, salesVal, percentVal].filter(v => v !== null).length;
 
     if (provided >= 2) {
-        if (kcVal !== null && salesVal !== null) {
-            nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (kcVal !== null && nonKcVal !== null) {
+        if (kcVal !== null && nonKcVal !== null) {
             salesVal = kcVal + nonKcVal;
-        } else if (salesVal !== null && nonKcVal !== null) {
+        } else if (kcVal !== null && salesVal !== null) {
+            nonKcVal = Math.max(salesVal - kcVal, 0);
+        } else if (nonKcVal !== null && salesVal !== null) {
             kcVal = Math.max(salesVal - nonKcVal, 0);
         } else if (salesVal !== null && percentVal !== null) {
-            kcVal = salesVal * percentVal / 100;
+            kcVal = (salesVal * percentVal) / 100;
             nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (kcVal !== null && percentVal !== null && percentVal !== 0) {
-            salesVal = kcVal * 100 / percentVal;
+        } else if (kcVal !== null && percentVal !== null) {
+            salesVal = percentVal === 0 ? kcVal : (kcVal * 100) / percentVal;
             nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (nonKcVal !== null && percentVal !== null && percentVal < 100) {
-            salesVal = nonKcVal * 100 / (100 - percentVal);
+        } else if (nonKcVal !== null && percentVal !== null) {
+            const percentRemainder = 100 - percentVal;
+            salesVal = percentRemainder === 0 ? nonKcVal : (nonKcVal * 100) / percentRemainder;
             kcVal = Math.max(salesVal - nonKcVal, 0);
         }
     } else if (provided === 1) {
