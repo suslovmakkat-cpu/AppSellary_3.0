@@ -398,7 +398,15 @@ tr:hover {
 }
 
 .draggable-header {
-    cursor: move;
+    cursor: grab;
+    user-select: none;
+}
+
+.draggable-header.dragging {
+    cursor: grabbing;
+}
+
+.modal-dragging {
     user-select: none;
 }
 
