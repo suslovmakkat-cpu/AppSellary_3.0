@@ -298,6 +298,31 @@ function deriveAmounts() {
     if (percentField) percentField.value = percentVal.toFixed(1);
 }
 
+function setCalculationEditingState(calculationId) {
+    const actionBtn = document.getElementById('calcActionButton');
+    const cancelBtn = document.getElementById('cancelCalcEdit');
+    const calcIdField = document.getElementById('calcEditingId');
+    if (!calcIdField) return;
+
+    calcIdField.value = calculationId || '';
+    if (calculationId) {
+        if (actionBtn) actionBtn.innerHTML = '<i>💾</i> Сохранить изменения';
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    } else {
+        if (actionBtn) actionBtn.innerHTML = '<i>🧮</i> Рассчитать ЗП';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+    }
+}
+
+function cancelCalculationEdit() {
+    const calcIdField = document.getElementById('calcEditingId');
+    if (calcIdField) {
+        calcIdField.value = '';
+    }
+    setCalculationEditingState(null);
+    document.getElementById('calculationResult').innerHTML = '';
+}
+
 async function calculateSalary(event) {
     if (event) event.preventDefault();
     const operatorId = document.getElementById('calcOperator').value;
@@ -322,8 +347,13 @@ async function calculateSalary(event) {
         bonus_percent_salary: parseFloat(document.getElementById('bonusPercentSalary').value) || 0,
         bonus_percent_sales: parseFloat(document.getElementById('bonusPercentSales').value) || 0
     };
-    const response = await fetch('/api/calculate', {
-        method: 'POST',
+    const calcIdField = document.getElementById('calcEditingId');
+    const isEditing = calcIdField && calcIdField.value;
+    const url = isEditing ? `/api/calculations/${calcIdField.value}` : '/api/calculate';
+    const method = isEditing ? 'PUT' : 'POST';
+
+    const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
@@ -334,14 +364,21 @@ async function calculateSalary(event) {
     }
     const summary = document.getElementById('calculationResult');
     if (summary) {
-        const planLine = result.plan_target && result.plan_target > 0 ? `<br>Выполнение плана: ${(result.plan_completion * 100).toFixed(1)}%` : '';
-        const taxLine = result.motivation_tax_bonus ? `<br>Налоговый бонус: ${result.motivation_tax_bonus.toLocaleString('ru-RU')} руб.` : '';
+        const planLine = result.plan_target && result.plan_target > 0 ? `<div>Выполнение плана: ${(result.plan_completion * 100).toFixed(1)}%</div>` : '';
+        const taxLine = result.motivation_tax_bonus ? `<div>Налоговый бонус: ${result.motivation_tax_bonus.toLocaleString('ru-RU')} руб.</div>` : '';
+        const steps = (result.detailed_breakdown || []).map(step => `<li>${step}</li>`).join('');
         summary.innerHTML = `
             <div class="alert alert-success">
-                Итоговая ЗП: <strong>${result.total_salary.toLocaleString('ru-RU')} руб.</strong><br>
-                Процент выкупа: ${result.redemption_percent.toFixed(1)}%<br>
-                Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}${planLine}${taxLine}
+                <div><strong>Итоговая ЗП: ${result.total_salary.toLocaleString('ru-RU')} руб.</strong></div>
+                <div>Процент выкупа: ${result.redemption_percent ? result.redemption_percent.toFixed(1) : '0.0'}%</div>
+                <div>Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}</div>
+                ${planLine}
+                ${taxLine}
+                ${steps ? `<hr><div>Детализация расчета:</div><ol>${steps}</ol>` : ''}
             </div>`;
+    }
+    if (isEditing) {
+        setCalculationEditingState(null);
     }
     loadCalculations();
     loadPayments();
@@ -789,8 +826,36 @@ function onOperatorChange() {
     }
 }
 
-function editCalculation(calculationId) {
-    alert(`Редактирование расчета #${calculationId} готовится`);
+async function editCalculation(calculationId) {
+    const response = await fetch(`/api/calculations/${calculationId}`);
+    const calc = await response.json();
+    if (!calc || !calc.id) {
+        alert('Расчет не найден');
+        return;
+    }
+
+    document.getElementById('calcOperator').value = calc.operator_id;
+    document.getElementById('calcMotivationOverride').value = calc.applied_motivation_id || '';
+    document.getElementById('calcPeriodStart').value = calc.period_start || '';
+    document.getElementById('calcPeriodEnd').value = calc.period_end || '';
+    document.getElementById('workingDaysInPeriod').value = calc.working_days_in_period || 0;
+    document.getElementById('kcAmount').value = calc.kc_amount || 0;
+    document.getElementById('nonKcAmount').value = calc.non_kc_amount || 0;
+    document.getElementById('salesAmount').value = calc.sales_amount || 0;
+    document.getElementById('kcPercent').value = calc.redemption_percent || 0;
+    document.getElementById('additionalBonus').value = calc.additional_bonus || calc.manual_fixed_bonus || 0;
+    document.getElementById('bonusPercentSalary').value = calc.bonus_percent_salary || 0;
+    document.getElementById('bonusPercentSales').value = calc.bonus_percent_sales || 0;
+    document.getElementById('penaltyAmount').value = calc.penalty_amount || calc.manual_penalty || 0;
+    document.getElementById('calcComment').value = calc.comment || '';
+
+    deriveAmounts();
+    setCalculationEditingState(calculationId);
+
+    const summary = document.getElementById('calculationResult');
+    if (summary) {
+        summary.innerHTML = `<div class="alert alert-info">Редактирование расчета #${calculationId}. Внесите изменения и сохраните.</div>`;
+    }
 }
 
 async function viewPaymentDetails(paymentId) {
@@ -813,6 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDashboard();
     enableModalInteractions('operatorModal');
     enableModalInteractions('motivationModal');
+    setCalculationEditingState(null);
     ['kcAmount', 'nonKcAmount', 'salesAmount'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', deriveAmounts);

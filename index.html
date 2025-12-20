@@ -234,9 +234,15 @@
                         </div>
                     </div>
 
-                    <button class="btn btn-success" onclick="calculateSalary()">
-                        <i>🧮</i> Рассчитать ЗП
-                    </button>
+                    <input type="hidden" id="calcEditingId" value="">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="btn btn-success" id="calcActionButton" onclick="calculateSalary()">
+                            <i>🧮</i> Рассчитать ЗП
+                        </button>
+                        <button class="btn btn-secondary" id="cancelCalcEdit" style="display: none;" onclick="cancelCalculationEdit()">
+                            Отменить редактирование
+                        </button>
+                    </div>
 
                     <div id="calculationResult" style="margin-top: 20px;"></div>
                 </div>
