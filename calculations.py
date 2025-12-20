@@ -34,6 +34,8 @@ def ensure_calculation_columns(conn):
         "working_days_in_period": "REAL DEFAULT 0",
         "plan_target": "REAL DEFAULT 0",
         "plan_completion": "REAL DEFAULT 0",
+        "include_buyout_percent": "INTEGER DEFAULT 1",
+        "correction_date": "TEXT",
     }
     for col, ddl in required.items():
         if col not in columns:
@@ -53,6 +55,7 @@ def _calculate_components(
     penalty_amount,
     bonus_percent_salary,
     bonus_percent_sales,
+    include_buyout_percent=True,
 ):
     kc_value, non_kc_value, sales_value, redemption_percent = derive_amounts(
         kc_amount, non_kc_amount, sales_amount, redemption_percent
@@ -76,11 +79,6 @@ def _calculate_components(
     subtotal = 0.0
     steps = []
 
-    salary_type_readable = _format_salary_type(operator["salary_type"])
-    base_percent = float(operator["base_percent"] or 0)
-    steps.append(
-        f"Тип зарплаты: {salary_type_readable}. Базовый процент: {base_percent}%"
-    )
     steps.append(
         f"Продажи: {sales_value:.2f} руб. (выкуплено {kc_value:.2f} руб., невыкупленных {non_kc_value:.2f} руб., процент выкупа {redemption_percent:.1f}% )"
     )
@@ -97,10 +95,14 @@ def _calculate_components(
             f"Процент с продаж: +{motivation_result.sales_component:.2f} руб. → {subtotal:.2f} руб."
         )
 
-    if motivation_result.redemption_component:
-        subtotal += motivation_result.redemption_component
+    redemption_component = motivation_result.redemption_component if include_buyout_percent else 0.0
+    if redemption_component != motivation_result.redemption_component:
+        steps.append("Процент с выкупа исключен из расчета по настройке расчета")
+
+    if redemption_component:
+        subtotal += redemption_component
         steps.append(
-            f"Процент с выкупа: +{motivation_result.redemption_component:.2f} руб. → {subtotal:.2f} руб."
+            f"Процент с выкупа: +{redemption_component:.2f} руб. → {subtotal:.2f} руб."
         )
 
     if motivation_result.fixed_bonuses:
@@ -140,16 +142,8 @@ def _calculate_components(
             f"Доп. бонусы: от расчета {bonus_from_salary:.2f} руб., от продаж {bonus_from_sales:.2f} руб. → {subtotal:.2f} руб."
         )
 
-    motivation_tax_bonus = subtotal * (float(motivation_result.tax_bonus_percent) / 100.0)
-    if motivation_tax_bonus:
-        subtotal += motivation_tax_bonus
-        steps.append(
-            f"Налоговый бонус мотивации ({motivation_result.tax_bonus_percent}%): +{motivation_tax_bonus:.2f} руб. → {subtotal:.2f} руб."
-        )
-
     tax_bonus_percent = float(operator["tax_bonus"] or 0)
-    salary_type = operator["salary_type"]
-    tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 and salary_type else 0
+    tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 else 0
     total_salary = subtotal + tax_bonus
     if tax_bonus:
         steps.append(
@@ -162,18 +156,18 @@ def _calculate_components(
         "kc_salary": motivation_result.redemption_component,
         "motivation_base_salary": motivation_result.base_salary,
         "sales_component": motivation_result.sales_component,
-        "redemption_component": motivation_result.redemption_component,
+        "redemption_component": redemption_component,
         "config_bonuses": motivation_result.fixed_bonuses,
         "config_percent_bonus": percent_bonus_amount,
         "manual_bonus": manual_bonus,
         "manual_penalty": manual_penalty,
         "bonus_from_salary": bonus_from_salary,
         "bonus_from_sales": bonus_from_sales,
-        "motivation_tax_bonus": motivation_tax_bonus,
         "tax_bonus": tax_bonus,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
         "detailed_steps": steps,
+        "include_buyout_percent": include_buyout_percent,
     }
 
     return {
@@ -189,12 +183,12 @@ def _calculate_components(
         "derived_sales": sales_value,
         "derived_non_kc": non_kc_value,
         "applied_motivation": applied_motivation_name,
-        "motivation_tax_bonus": motivation_tax_bonus,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
         "applied_motivation_name": applied_motivation_name,
         "applied_motivation_config": config,
         "detailed_breakdown": steps,
+        "include_buyout_percent": include_buyout_percent,
     }, breakdown
 
 
@@ -214,6 +208,8 @@ def calculate_salary(
     motivation_override_id=None,
     bonus_percent_salary=0,
     bonus_percent_sales=0,
+    include_buyout_percent=True,
+    correction_date=None,
 ):
     conn = get_db_connection()
     ensure_calculation_columns(conn)
@@ -264,6 +260,7 @@ def calculate_salary(
         penalty_amount,
         bonus_percent_salary,
         bonus_percent_sales,
+        include_buyout_percent,
     )
 
     if save_to_db:
@@ -275,8 +272,8 @@ def calculate_salary(
              redemption_percent, manual_fixed_bonus, manual_penalty, bonus_percent_salary,
              bonus_percent_sales, applied_motivation_id, applied_motivation_name,
              motivation_snapshot, calculation_breakdown, working_days_in_period,
-             plan_target, plan_completion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             plan_target, plan_completion, include_buyout_percent, correction_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 operator_id,
@@ -302,6 +299,8 @@ def calculate_salary(
                 working_days_in_period,
                 calc_result["plan_target"],
                 calc_result["plan_completion"],
+                1 if include_buyout_percent else 0,
+                correction_date,
             ),
         )
         conn.commit()
@@ -369,6 +368,9 @@ def update_calculation(
     motivation_override_id=None,
     bonus_percent_salary=0,
     bonus_percent_sales=0,
+    include_buyout_percent=True,
+    correction_date=None,
+    payment_id=None,
 ):
     conn = get_db_connection()
     ensure_calculation_columns(conn)
@@ -426,6 +428,7 @@ def update_calculation(
         penalty_amount,
         bonus_percent_salary,
         bonus_percent_sales,
+        include_buyout_percent,
     )
 
     conn.execute(
@@ -435,7 +438,8 @@ def update_calculation(
             period_start = ?, period_end = ?, additional_bonus = ?, penalty_amount = ?, comment = ?,
             redemption_percent = ?, manual_fixed_bonus = ?, manual_penalty = ?, bonus_percent_salary = ?,
             bonus_percent_sales = ?, applied_motivation_id = ?, applied_motivation_name = ?,
-            motivation_snapshot = ?, calculation_breakdown = ?, working_days_in_period = ?, plan_target = ?, plan_completion = ?
+            motivation_snapshot = ?, calculation_breakdown = ?, working_days_in_period = ?, plan_target = ?, plan_completion = ?,
+            include_buyout_percent = ?, correction_date = ?
         WHERE id = ?
         """,
         (
@@ -462,23 +466,33 @@ def update_calculation(
             working_days_in_period,
             calc_result["plan_target"],
             calc_result["plan_completion"],
+            1 if include_buyout_percent else 0,
+            correction_date,
             calculation_id,
         ),
     )
 
-    payment_row = conn.execute(
-        """
-        SELECT id FROM payments
-        WHERE operator_id = ? AND calculation_date = ? AND is_deleted = 0
-        """,
-        (existing["operator_id"], existing["calculation_date"]),
-    ).fetchone()
+    payment_row = None
+    if payment_id:
+        payment_row = conn.execute(
+            "SELECT * FROM payments WHERE id = ? AND is_deleted = 0",
+            (payment_id,),
+        ).fetchone()
+
+    if not payment_row:
+        payment_row = conn.execute(
+            """
+            SELECT id FROM payments
+            WHERE operator_id = ? AND calculation_date = ? AND is_deleted = 0
+            """,
+            (existing["operator_id"], existing["calculation_date"]),
+        ).fetchone()
 
     if payment_row:
         conn.execute(
             """
             UPDATE payments
-            SET operator_id = ?, total_salary = ?, period_start = ?, period_end = ?, sales_amount = ?
+            SET operator_id = ?, total_salary = ?, period_start = ?, period_end = ?, sales_amount = ?, correction_date = COALESCE(?, correction_date)
             WHERE id = ?
             """,
             (
@@ -487,6 +501,7 @@ def update_calculation(
                 period_start,
                 period_end,
                 calc_result["derived_sales"],
+                correction_date,
                 payment_row["id"],
             ),
         )
@@ -494,8 +509,8 @@ def update_calculation(
         conn.execute(
             """
             INSERT INTO payments
-            (operator_id, calculation_date, total_salary, is_paid, period_start, period_end, sales_amount)
-            VALUES (?, ?, ?, 0, ?, ?, ?)
+            (operator_id, calculation_date, total_salary, is_paid, period_start, period_end, sales_amount, correction_date)
+            VALUES (?, ?, ?, 0, ?, ?, ?, ?)
             """,
             (
                 operator_id,
@@ -504,6 +519,7 @@ def update_calculation(
                 period_start,
                 period_end,
                 calc_result["derived_sales"],
+                correction_date,
             ),
         )
 

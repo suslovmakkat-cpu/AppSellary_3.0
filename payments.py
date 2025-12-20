@@ -97,31 +97,72 @@ def get_payments(operator_id=None, start_date=None, end_date=None, include_delet
     return rows
 
 
+def update_payment(
+    payment_id,
+    total_salary=None,
+    period_start=None,
+    period_end=None,
+    sales_amount=None,
+    is_paid=None,
+    payment_date=None,
+    correction_date=None,
+):
+    conn = get_db_connection()
+    existing = conn.execute(
+        'SELECT * FROM payments WHERE id = ? AND is_deleted = 0',
+        (payment_id,)
+    ).fetchone()
+    if not existing:
+        conn.close()
+        return None
+
+    resolved_total = total_salary if total_salary is not None else existing['total_salary']
+    resolved_period_start = period_start if period_start is not None else existing['period_start']
+    resolved_period_end = period_end if period_end is not None else existing['period_end']
+    resolved_sales_amount = sales_amount if sales_amount is not None else existing['sales_amount']
+    resolved_is_paid = existing['is_paid'] if is_paid is None else (1 if is_paid else 0)
+    resolved_payment_date = payment_date
+    if resolved_payment_date is None and is_paid is not None:
+        resolved_payment_date = datetime.now().strftime('%Y-%m-%d') if is_paid else None
+
+    conn.execute(
+        '''
+        UPDATE payments
+        SET total_salary = ?, period_start = ?, period_end = ?, sales_amount = ?,
+            is_paid = ?, payment_date = COALESCE(?, payment_date), correction_date = COALESCE(?, correction_date)
+        WHERE id = ?
+        ''',
+        (
+            resolved_total,
+            resolved_period_start,
+            resolved_period_end,
+            resolved_sales_amount,
+            resolved_is_paid,
+            resolved_payment_date,
+            correction_date,
+            payment_id,
+        )
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        'payment_updated',
+        f'Payment {payment_id} updated to {resolved_total}',
+        existing['operator_id']
+    )
+    return True
+
+
 # =========================
 # UPDATE PAYMENT STATUS
 # =========================
 
 def update_payment_status(payment_id, is_paid):
-    conn = get_db_connection()
-
-    payment_date = datetime.now().strftime('%Y-%m-%d') if is_paid else None
-
-    conn.execute(
-        '''
-        UPDATE payments
-        SET is_paid = ?, payment_date = ?
-        WHERE id = ? AND is_deleted = 0
-        ''',
-        (1 if is_paid else 0, payment_date, payment_id)
-    )
-
-    conn.commit()
-    conn.close()
-
-    status_text = 'paid' if is_paid else 'pending'
-    log_action(
-        'payment_status_updated',
-        f'Payment {payment_id} status: {status_text}'
+    update_payment(
+        payment_id,
+        is_paid=is_paid,
+        payment_date=datetime.now().strftime('%Y-%m-%d') if is_paid else None
     )
 
 
