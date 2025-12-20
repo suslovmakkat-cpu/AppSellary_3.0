@@ -397,6 +397,11 @@ tr:hover {
     border-bottom: 1px solid #eee;
 }
 
+.draggable-header {
+    cursor: move;
+    user-select: none;
+}
+
 .modal-header h3 {
     color: var(--secondary);
     margin: 0;
