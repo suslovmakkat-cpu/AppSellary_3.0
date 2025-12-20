@@ -17,28 +17,32 @@
             </button>
         </div>
 
-        <div class="nav-links">
-            <div class="nav-item active" onclick="showSection('dashboard')">
-                <i>📊</i>
-                <span>Дашборд</span>
-            </div>
+            <div class="nav-links">
+                <div class="nav-item active" onclick="showSection('dashboard')">
+                    <i>📊</i>
+                    <span>Дашборд</span>
+                </div>
             <div class="nav-item" onclick="showSection('operators')">
                 <i>👥</i>
                 <span>Операторы</span>
             </div>
-            <div class="nav-item" onclick="showSection('calculations')">
-                <i>🧮</i>
-                <span>Расчеты ЗП</span>
+                <div class="nav-item" onclick="showSection('calculations')">
+                    <i>🧮</i>
+                    <span>Расчеты ЗП</span>
+                </div>
+                <div class="nav-item" onclick="showSection('payments')">
+                    <i>💳</i>
+                    <span>Выплаты</span>
+                </div>
+                <div class="nav-item" onclick="showSection('corrections')">
+                    <i>✏️</i>
+                    <span>Корректировка расчетов</span>
+                </div>
+                <div class="nav-item" onclick="showSection('settings')">
+                    <i>⚙️</i>
+                    <span>Настройки</span>
+                </div>
             </div>
-            <div class="nav-item" onclick="showSection('payments')">
-                <i>💳</i>
-                <span>Выплаты</span>
-            </div>
-            <div class="nav-item" onclick="showSection('settings')">
-                <i>⚙️</i>
-                <span>Настройки</span>
-            </div>
-        </div>
     </div>
 
     <!-- Main Content -->
@@ -97,6 +101,25 @@
                     </div>
                 </div>
             </div>
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                    <h3 style="margin-right: 10px;">Динамика</h3>
+                    <select id="dashboardMetric" class="form-control" style="width: 140px;">
+                        <option value="sales">Продажи</option>
+                        <option value="salary">Выплаты</option>
+                    </select>
+                    <select id="dashboardOperator" class="form-control" style="width: 180px;"></select>
+                    <select id="dashboardPeriod" class="form-control" style="width: 140px;">
+                        <option value="week">Неделя</option>
+                        <option value="month">Месяц</option>
+                        <option value="custom">Произвольный</option>
+                    </select>
+                    <input type="date" id="dashboardStart" class="form-control" style="width: 150px;">
+                    <input type="date" id="dashboardEnd" class="form-control" style="width: 150px;">
+                    <button class="btn btn-primary" onclick="refreshDashboardChart()">Показать</button>
+                </div>
+                <div id="dashboardChart" style="height: 280px; padding: 10px;"></div>
+            </div>
         </div>
 
         <!-- Operators Section -->
@@ -115,8 +138,6 @@
                         <thead>
                             <tr>
                                 <th>ФИО</th>
-                                <th>Тип ЗП</th>
-                                <th>Базовый %</th>
                                 <th>Налоговый бонус</th>
                                 <th>Статус</th>
                                 <th>Действия</th>
@@ -222,6 +243,9 @@
                             <input type="number" class="form-control" id="bonusPercentSales" value="0" step="0.1">
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="includeRedemption" checked> считать процент от выкупа</label>
+                    </div>
 
                     <div class="grid-2">
                         <div class="form-group">
@@ -263,6 +287,7 @@
                                     <th>ЗП</th>
                                     <th>Мотивация</th>
                                     <th>Дата</th>
+                                    <th>Дата корректировки</th>
                                     <th>Действия</th>
                                 </tr>
                             </thead>
@@ -294,10 +319,36 @@
                                 <th>Сумма</th>
                                 <th>Статус</th>
                                 <th>Дата оплаты</th>
+                                <th>Дата корректировки</th>
                                 <th>Действия</th>
                             </tr>
                         </thead>
                         <tbody id="paymentsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Corrections Section -->
+        <div id="corrections" class="section">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Корректировка расчетов</h3>
+                    <button class="btn btn-primary" onclick="loadCorrections()">Обновить</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Оператор</th>
+                                <th>Период</th>
+                                <th>Расчет ЗП</th>
+                                <th>Выплата</th>
+                                <th>Дата корректировки</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="correctionsTable"></tbody>
                     </table>
                 </div>
             </div>
@@ -400,20 +451,6 @@
                     <label>ФИО оператора *</label>
                     <input type="text" class="form-control" id="operatorName" placeholder="Введите ФИО оператора" required>
                 </div>
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label>Тип ЗП</label>
-                        <select class="form-control" id="operatorSalaryType" onchange="toggleOperatorSettings()">
-                            <option value="">Не выбрано</option>
-                            <option value="progressive">Прогрессивная</option>
-                            <option value="fixed">Фиксированная</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Базовый процент *</label>
-                        <input type="number" class="form-control" id="operatorBasePercent" value="0" step="0.01" min="0" max="100">
-                    </div>
-                </div>
                 <div class="form-group">
                     <label>Мотивация по умолчанию</label>
                     <select class="form-control" id="operatorMotivation">
@@ -432,9 +469,6 @@
                             <option value="0">Неактивен</option>
                         </select>
                     </div>
-                </div>
-                <div class="form-hint" id="operatorSalaryHint" style="display: none;">
-                    При нулевых значениях или невыбранном типе ЗП используется мотивация по умолчанию.
                 </div>
                 <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
                     <button class="btn btn-secondary" onclick="closeModal('operatorModal')">
@@ -460,28 +494,16 @@
                     <label>Название *</label>
                     <input type="text" class="form-control" id="motivationName" required>
                 </div>
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label>Тип системы</label>
-                        <select class="form-control" id="motivationType">
-                            <option value="composite">Комбинированная</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Статус</label>
-                        <select class="form-control" id="motivationStatus">
-                            <option value="1">Активна</option>
-                            <option value="0">Выключена</option>
-                        </select>
-                    </div>
+                <div class="form-group">
+                    <label>Статус</label>
+                    <select class="form-control" id="motivationStatus">
+                        <option value="1">Активна</option>
+                        <option value="0">Выключена</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Описание</label>
                     <textarea class="form-control" id="motivationDescription" rows="2"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Налоговый бонус (%)</label>
-                    <input type="number" class="form-control" id="motivationTaxBonus" step="0.1" min="0" placeholder="0">
                 </div>
                 <div class="form-group">
                     <label>Блоки мотивации</label>
@@ -491,6 +513,118 @@
                 <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 20px;">
                     <button class="btn btn-secondary" onclick="closeModal('motivationModal')">Отмена</button>
                     <button class="btn btn-success" onclick="saveMotivation()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Редактировать выплату</h3>
+                <span class="close" onclick="closeModal('paymentModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="paymentId">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Оператор</label>
+                        <select class="form-control" id="paymentOperator"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Дата расчета</label>
+                        <input type="date" class="form-control" id="paymentDate">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Период с</label>
+                        <input type="date" class="form-control" id="paymentPeriodStart">
+                    </div>
+                    <div class="form-group">
+                        <label>Период по</label>
+                        <input type="date" class="form-control" id="paymentPeriodEnd">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Сумма продаж</label>
+                        <input type="number" class="form-control" id="paymentSales" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Сумма выплаты</label>
+                        <input type="number" class="form-control" id="paymentTotal" step="0.01">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="paymentIsPaid"> Выплата проведена</label>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="closeModal('paymentModal')">Отмена</button>
+                    <button class="btn btn-success" onclick="savePaymentEdit()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="correctionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Корректировка расчета</h3>
+                <span class="close" onclick="closeModal('correctionModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="correctionCalcId">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Оператор</label>
+                        <select class="form-control" id="correctionOperator"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Процент выкупа</label>
+                        <input type="number" class="form-control" id="correctionKcPercent" step="0.1">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Сумма выкупленных заказов</label>
+                        <input type="number" class="form-control" id="correctionKcAmount" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Сумма невыкупленных заказов</label>
+                        <input type="number" class="form-control" id="correctionNonKcAmount" step="0.01">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Общая сумма продаж</label>
+                        <input type="number" class="form-control" id="correctionSalesAmount" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Доп. бонус</label>
+                        <input type="number" class="form-control" id="correctionBonus" step="0.01" value="0">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Штраф</label>
+                        <input type="number" class="form-control" id="correctionPenalty" step="0.01" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Комментарий</label>
+                        <input type="text" class="form-control" id="correctionComment">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="correctionIncludeRedemption" checked> считать процент от выкупа</label>
+                </div>
+                <div class="form-group">
+                    <label>Итоговая сумма расчета</label>
+                    <input type="number" class="form-control" id="correctionTotal" step="0.01" disabled>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="closeModal('correctionModal')">Отмена</button>
+                    <button class="btn btn-success" onclick="saveCorrection()">Сохранить</button>
                 </div>
             </div>
         </div>

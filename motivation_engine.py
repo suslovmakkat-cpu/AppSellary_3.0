@@ -13,7 +13,6 @@ class MotivationRuleResult:
     plan_multiplier: float
     plan_target: float
     plan_completion: float
-    tax_bonus_percent: float = 0.0
 
 
 class MotivationEngine:
@@ -44,7 +43,6 @@ class MotivationEngine:
         working_days_in_period: float,
     ) -> MotivationRuleResult:
         blocks: List[Dict[str, Any]] = config.get("blocks") or []
-        tax_bonus_percent = float(config.get("tax_bonus_percent") or 0)
         together_totals = {
             "base_salary": 0.0,
             "sales_component": 0.0,
@@ -143,7 +141,6 @@ class MotivationEngine:
             plan_multiplier=plan_multiplier,
             plan_target=plan_target,
             plan_completion=plan_completion if plan_target > 0 else 1.0,
-            tax_bonus_percent=tax_bonus_percent,
         )
 
 

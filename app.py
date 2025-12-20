@@ -9,7 +9,7 @@ from operators import (
     delete_operator_forever
 )
 from payments import (
-    create_payment, get_payments, update_payment_status,
+    create_payment, get_payments, get_payment_by_id, update_payment_status, update_payment,
     soft_delete_payment, restore_payment, get_deleted_payments,
     delete_payment_forever
 )
@@ -62,14 +62,11 @@ def api_get_operator(operator_id):
 @app.route('/api/operators', methods=['POST'])
 def api_add_operator():
     data = request.json
-    salary_type = data.get('salary_type') or None
-    base_percent = data.get('base_percent')
-    base_percent = None if base_percent in (None, 0, '') else base_percent
     tax_bonus = data.get('tax_bonus', 0) or 0
     oid = add_operator(
         data['name'],
-        salary_type,
-        base_percent,
+        None,
+        None,
         tax_bonus,
         data.get('motivation_id')
     )
@@ -78,15 +75,12 @@ def api_add_operator():
 @app.route('/api/operators/<int:operator_id>', methods=['PUT'])
 def api_update_operator(operator_id):
     data = request.json
-    salary_type = data.get('salary_type') or None
-    base_percent = data.get('base_percent')
-    base_percent = None if base_percent in (None, 0, '') else base_percent
     tax_bonus = data.get('tax_bonus', 0) or 0
     update_operator(
         operator_id,
         data['name'],
-        salary_type,
-        base_percent,
+        None,
+        None,
         tax_bonus,
         data.get('is_active', 1),
         data.get('motivation_id')
@@ -118,7 +112,8 @@ def api_calculate():
             save_to_db=True,
             motivation_override_id=data.get('motivation_override_id'),
             bonus_percent_salary=data.get('bonus_percent_salary', 0),
-            bonus_percent_sales=data.get('bonus_percent_sales', 0)
+            bonus_percent_sales=data.get('bonus_percent_sales', 0),
+            include_redemption_percent=data.get('include_redemption_percent', True)
         )
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
@@ -130,7 +125,9 @@ def api_calculate():
             result['total_salary'],
             data.get('period_start'),
             data.get('period_end'),
-            result.get('derived_sales', data.get('sales_amount', 0))
+            result.get('derived_sales', data.get('sales_amount', 0)),
+            calculation_id=result.get('calculation_id'),
+            correction_date=None
         )
     return jsonify(result or {'error': 'not found'})
 
@@ -176,7 +173,8 @@ def api_update_calculation(calc_id):
             data.get('comment'),
             data.get('motivation_override_id'),
             data.get('bonus_percent_salary', 0),
-            data.get('bonus_percent_sales', 0)
+            data.get('bonus_percent_sales', 0),
+            data.get('include_redemption_percent')
         )
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
@@ -202,7 +200,33 @@ def api_payments():
 
 @app.route('/api/payments/<int:pid>', methods=['PUT'])
 def api_payment_update(pid):
-    update_payment_status(pid, request.json.get('is_paid', False))
+    data = request.json or {}
+    if set(data.keys()) <= {'is_paid'}:
+        update_payment_status(pid, data.get('is_paid', False))
+    else:
+        existing = get_payment_by_id(pid)
+        if not existing:
+            return jsonify({'error': 'not found'}), 404
+        update_payment(
+            pid,
+            data.get('operator_id', existing['operator_id']),
+            data.get('calculation_date', existing['calculation_date']),
+            data.get('total_salary', existing['total_salary']),
+            data.get('period_start', existing['period_start']),
+            data.get('period_end', existing['period_end']),
+            data.get('sales_amount', existing['sales_amount']),
+            data.get('is_paid', existing['is_paid']),
+            data.get('additional_bonus', existing['additional_bonus']),
+            data.get('penalty_amount', existing['penalty_amount']),
+            data.get('correction_date'),
+            data.get('calculation_id', existing['calculation_id']),
+        )
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/payments/<int:pid>', methods=['DELETE'])
+def api_payment_delete(pid):
+    soft_delete_payment(pid)
     return jsonify({'status': 'ok'})
 
 
@@ -215,6 +239,105 @@ def api_payment_get(pid):
     ).fetchone()
     conn.close()
     return jsonify(dict(row) if row else {})
+
+
+@app.route('/api/dashboard/series', methods=['GET'])
+def api_dashboard_series():
+    metric = request.args.get('metric', 'sales')
+    operator_id = request.args.get('operator_id', type=int)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    conn = get_db_connection()
+    params = []
+    if metric == 'salary':
+        query = "SELECT calculation_date as dt, SUM(total_salary) as total FROM payments WHERE is_deleted = 0"
+        date_column = 'calculation_date'
+    else:
+        query = "SELECT calculation_date as dt, SUM(sales_amount) as total FROM manual_calculations WHERE is_deleted = 0"
+        date_column = 'calculation_date'
+    if operator_id:
+        query += " AND operator_id = ?"
+        params.append(operator_id)
+    if start_date:
+        query += f" AND {date_column} >= ?"
+        params.append(start_date)
+    if end_date:
+        query += f" AND {date_column} <= ?"
+        params.append(end_date)
+    query += " GROUP BY dt ORDER BY dt"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    labels = [r['dt'] for r in rows]
+    values = [r['total'] or 0 for r in rows]
+    return jsonify({'labels': labels, 'values': values})
+
+
+# =========================
+# CORRECTIONS
+# =========================
+
+
+def _get_corrections():
+    conn = get_db_connection()
+    calculations = conn.execute(
+        '''
+        SELECT mc.*, o.name AS operator_name
+        FROM manual_calculations mc
+        LEFT JOIN operators o ON mc.operator_id = o.id
+        WHERE mc.is_deleted = 0
+        ORDER BY mc.calculation_date DESC
+        '''
+    ).fetchall()
+    results = []
+    for calc in calculations:
+        payment = conn.execute(
+            '''
+            SELECT * FROM payments
+            WHERE is_deleted = 0 AND (calculation_id = ? OR (operator_id = ? AND calculation_date = ?))
+            ORDER BY CASE WHEN calculation_id = ? THEN 0 ELSE 1 END
+            LIMIT 1
+            ''',
+            (calc['id'], calc['operator_id'], calc['calculation_date'], calc['id']),
+        ).fetchone()
+        item = dict(calc)
+        item['payment'] = dict(payment) if payment else None
+        results.append(item)
+    conn.close()
+    return results
+
+
+@app.route('/api/corrections', methods=['GET'])
+def api_corrections():
+    return jsonify(_get_corrections())
+
+
+@app.route('/api/corrections/<int:calc_id>', methods=['PUT'])
+def api_update_correction(calc_id):
+    data = request.get_json(silent=True) or {}
+    if 'operator_id' not in data:
+        return jsonify({'error': 'operator_id is required'}), 400
+    result = update_calculation(
+        calc_id,
+        data['operator_id'],
+        data.get('kc_amount', 0),
+        data.get('non_kc_amount', 0),
+        data.get('sales_amount', 0),
+        data.get('redemption_percent'),
+        data.get('period_start'),
+        data.get('period_end'),
+        data.get('working_days_in_period', 0),
+        data.get('additional_bonus', 0),
+        data.get('penalty_amount', 0),
+        data.get('comment'),
+        data.get('motivation_override_id'),
+        data.get('bonus_percent_salary', 0),
+        data.get('bonus_percent_sales', 0),
+        data.get('include_redemption_percent'),
+        from_correction=True,
+    )
+    if not result:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(result)
 
 # =========================
 # MOTIVATIONS (NEW)

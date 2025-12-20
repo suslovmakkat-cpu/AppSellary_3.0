@@ -4,14 +4,6 @@ from datetime import datetime
 from config import get_db_connection, log_action
 from motivation_engine import MotivationEngine, derive_amounts
 
-
-def _format_salary_type(salary_type):
-    if salary_type == "fixed":
-        return "Фиксированная"
-    if salary_type == "progressive":
-        return "Прогрессивная"
-    return "Не выбрана"
-
 def ensure_calculation_columns(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(manual_calculations)").fetchall()}
     required = {
@@ -34,6 +26,8 @@ def ensure_calculation_columns(conn):
         "working_days_in_period": "REAL DEFAULT 0",
         "plan_target": "REAL DEFAULT 0",
         "plan_completion": "REAL DEFAULT 0",
+        "include_redemption_percent": "INTEGER DEFAULT 1",
+        "correction_date": "TEXT",
     }
     for col, ddl in required.items():
         if col not in columns:
@@ -53,6 +47,7 @@ def _calculate_components(
     penalty_amount,
     bonus_percent_salary,
     bonus_percent_sales,
+    include_redemption_percent=True,
 ):
     kc_value, non_kc_value, sales_value, redemption_percent = derive_amounts(
         kc_amount, non_kc_amount, sales_amount, redemption_percent
@@ -76,11 +71,6 @@ def _calculate_components(
     subtotal = 0.0
     steps = []
 
-    salary_type_readable = _format_salary_type(operator["salary_type"])
-    base_percent = float(operator["base_percent"] or 0)
-    steps.append(
-        f"Тип зарплаты: {salary_type_readable}. Базовый процент: {base_percent}%"
-    )
     steps.append(
         f"Продажи: {sales_value:.2f} руб. (выкуплено {kc_value:.2f} руб., невыкупленных {non_kc_value:.2f} руб., процент выкупа {redemption_percent:.1f}% )"
     )
@@ -97,11 +87,14 @@ def _calculate_components(
             f"Процент с продаж: +{motivation_result.sales_component:.2f} руб. → {subtotal:.2f} руб."
         )
 
-    if motivation_result.redemption_component:
-        subtotal += motivation_result.redemption_component
+    redemption_component_value = motivation_result.redemption_component if include_redemption_percent else 0.0
+    if redemption_component_value:
+        subtotal += redemption_component_value
         steps.append(
-            f"Процент с выкупа: +{motivation_result.redemption_component:.2f} руб. → {subtotal:.2f} руб."
+            f"Процент с выкупа: +{redemption_component_value:.2f} руб. → {subtotal:.2f} руб."
         )
+    elif motivation_result.redemption_component:
+        steps.append("Процент с выкупа отключен для расчета")
 
     if motivation_result.fixed_bonuses:
         subtotal += motivation_result.fixed_bonuses
@@ -140,16 +133,8 @@ def _calculate_components(
             f"Доп. бонусы: от расчета {bonus_from_salary:.2f} руб., от продаж {bonus_from_sales:.2f} руб. → {subtotal:.2f} руб."
         )
 
-    motivation_tax_bonus = subtotal * (float(motivation_result.tax_bonus_percent) / 100.0)
-    if motivation_tax_bonus:
-        subtotal += motivation_tax_bonus
-        steps.append(
-            f"Налоговый бонус мотивации ({motivation_result.tax_bonus_percent}%): +{motivation_tax_bonus:.2f} руб. → {subtotal:.2f} руб."
-        )
-
     tax_bonus_percent = float(operator["tax_bonus"] or 0)
-    salary_type = operator["salary_type"]
-    tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 and salary_type else 0
+    tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 else 0
     total_salary = subtotal + tax_bonus
     if tax_bonus:
         steps.append(
@@ -169,7 +154,6 @@ def _calculate_components(
         "manual_penalty": manual_penalty,
         "bonus_from_salary": bonus_from_salary,
         "bonus_from_sales": bonus_from_sales,
-        "motivation_tax_bonus": motivation_tax_bonus,
         "tax_bonus": tax_bonus,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
@@ -177,7 +161,7 @@ def _calculate_components(
     }
 
     return {
-        "kc_salary": motivation_result.redemption_component,
+        "kc_salary": redemption_component_value,
         "non_kc_salary": non_kc_value,
         "additional_bonus": manual_bonus,
         "penalty_amount": manual_penalty,
@@ -189,12 +173,13 @@ def _calculate_components(
         "derived_sales": sales_value,
         "derived_non_kc": non_kc_value,
         "applied_motivation": applied_motivation_name,
-        "motivation_tax_bonus": motivation_tax_bonus,
+        "motivation_tax_bonus": 0.0,
         "plan_target": motivation_result.plan_target,
         "plan_completion": motivation_result.plan_completion,
         "applied_motivation_name": applied_motivation_name,
         "applied_motivation_config": config,
         "detailed_breakdown": steps,
+        "include_redemption_percent": 1 if include_redemption_percent else 0,
     }, breakdown
 
 
@@ -214,6 +199,7 @@ def calculate_salary(
     motivation_override_id=None,
     bonus_percent_salary=0,
     bonus_percent_sales=0,
+    include_redemption_percent=True,
 ):
     conn = get_db_connection()
     ensure_calculation_columns(conn)
@@ -264,10 +250,12 @@ def calculate_salary(
         penalty_amount,
         bonus_percent_salary,
         bonus_percent_sales,
+        include_redemption_percent,
     )
 
     if save_to_db:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             INSERT INTO manual_calculations
             (operator_id, kc_amount, non_kc_amount, kc_percent, sales_amount, total_salary,
@@ -275,8 +263,8 @@ def calculate_salary(
              redemption_percent, manual_fixed_bonus, manual_penalty, bonus_percent_salary,
              bonus_percent_sales, applied_motivation_id, applied_motivation_name,
              motivation_snapshot, calculation_breakdown, working_days_in_period,
-             plan_target, plan_completion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             plan_target, plan_completion, include_redemption_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 operator_id,
@@ -302,13 +290,18 @@ def calculate_salary(
                 working_days_in_period,
                 calc_result["plan_target"],
                 calc_result["plan_completion"],
+                1 if include_redemption_percent else 0,
             ),
         )
+        calc_id = cur.lastrowid
         conn.commit()
         log_action("calculation_created", f"calc for operator {operator_id}", operator_id)
+    else:
+        calc_id = None
 
     conn.close()
 
+    calc_result["calculation_id"] = calc_id
     return calc_result
 
 
@@ -369,6 +362,8 @@ def update_calculation(
     motivation_override_id=None,
     bonus_percent_salary=0,
     bonus_percent_sales=0,
+    include_redemption_percent=None,
+    from_correction=False,
 ):
     conn = get_db_connection()
     ensure_calculation_columns(conn)
@@ -379,6 +374,8 @@ def update_calculation(
     if not existing:
         conn.close()
         return None
+
+    include_flag = include_redemption_percent if include_redemption_percent is not None else bool(existing.get("include_redemption_percent", 1))
 
     operator = conn.execute(
         """
@@ -426,6 +423,7 @@ def update_calculation(
         penalty_amount,
         bonus_percent_salary,
         bonus_percent_sales,
+        include_flag,
     )
 
     conn.execute(
@@ -435,7 +433,8 @@ def update_calculation(
             period_start = ?, period_end = ?, additional_bonus = ?, penalty_amount = ?, comment = ?,
             redemption_percent = ?, manual_fixed_bonus = ?, manual_penalty = ?, bonus_percent_salary = ?,
             bonus_percent_sales = ?, applied_motivation_id = ?, applied_motivation_name = ?,
-            motivation_snapshot = ?, calculation_breakdown = ?, working_days_in_period = ?, plan_target = ?, plan_completion = ?
+            motivation_snapshot = ?, calculation_breakdown = ?, working_days_in_period = ?, plan_target = ?, plan_completion = ?,
+            include_redemption_percent = ?, correction_date = ?
         WHERE id = ?
         """,
         (
@@ -462,6 +461,8 @@ def update_calculation(
             working_days_in_period,
             calc_result["plan_target"],
             calc_result["plan_completion"],
+            1 if include_flag else 0,
+            datetime.now().strftime("%Y-%m-%d") if from_correction else existing["correction_date"],
             calculation_id,
         ),
     )
@@ -469,16 +470,18 @@ def update_calculation(
     payment_row = conn.execute(
         """
         SELECT id FROM payments
-        WHERE operator_id = ? AND calculation_date = ? AND is_deleted = 0
+        WHERE is_deleted = 0 AND (calculation_id = ? OR (operator_id = ? AND calculation_date = ?))
+        ORDER BY CASE WHEN calculation_id = ? THEN 0 ELSE 1 END
+        LIMIT 1
         """,
-        (existing["operator_id"], existing["calculation_date"]),
+        (calculation_id, existing["operator_id"], existing["calculation_date"], calculation_id),
     ).fetchone()
 
     if payment_row:
         conn.execute(
             """
             UPDATE payments
-            SET operator_id = ?, total_salary = ?, period_start = ?, period_end = ?, sales_amount = ?
+            SET operator_id = ?, total_salary = ?, period_start = ?, period_end = ?, sales_amount = ?, calculation_id = ?, correction_date = CASE WHEN ? THEN ? ELSE correction_date END
             WHERE id = ?
             """,
             (
@@ -487,6 +490,9 @@ def update_calculation(
                 period_start,
                 period_end,
                 calc_result["derived_sales"],
+                calculation_id,
+                1 if from_correction else 0,
+                datetime.now().strftime("%Y-%m-%d") if from_correction else None,
                 payment_row["id"],
             ),
         )
@@ -494,8 +500,8 @@ def update_calculation(
         conn.execute(
             """
             INSERT INTO payments
-            (operator_id, calculation_date, total_salary, is_paid, period_start, period_end, sales_amount)
-            VALUES (?, ?, ?, 0, ?, ?, ?)
+            (operator_id, calculation_date, total_salary, is_paid, period_start, period_end, sales_amount, calculation_id, correction_date)
+            VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
             """,
             (
                 operator_id,
@@ -504,6 +510,8 @@ def update_calculation(
                 period_start,
                 period_end,
                 calc_result["derived_sales"],
+                calculation_id,
+                datetime.now().strftime("%Y-%m-%d") if from_correction else None,
             ),
         )
 
