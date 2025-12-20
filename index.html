@@ -198,21 +198,21 @@
                                 Сумма выкупленных заказов *
                                 <span class="help-icon" data-tooltip="Сумма заказов, которые были выкуплены клиентами">❓</span>
                             </label>
-                            <input type="number" class="form-control" id="kcAmount" placeholder="0" oninput="deriveAmounts()">
+                            <input type="number" class="form-control" id="kcAmount" oninput="deriveAmounts()">
                         </div>
                         <div class="form-group">
                             <label>
                                 Сумма невыкупленных заказов *
                                 <span class="help-icon" data-tooltip="Сумма заказов, которые не были выкуплены клиентами">❓</span>
                             </label>
-                            <input type="number" class="form-control" id="nonKcAmount" placeholder="0" oninput="deriveAmounts()">
+                            <input type="number" class="form-control" id="nonKcAmount" oninput="deriveAmounts()">
                         </div>
                         <div class="form-group">
                             <label>
                                 Общая сумма продаж *
                                 <span class="help-icon" data-tooltip="Общая сумма всех заказов (выкупленных + невыкупленных)">❓</span>
                             </label>
-                            <input type="number" class="form-control" id="salesAmount" placeholder="0" oninput="deriveAmounts()">
+                            <input type="number" class="form-control" id="salesAmount" oninput="deriveAmounts()">
                         </div>
                     </div>
 
@@ -222,7 +222,7 @@
                                 Процент выкупа
                                 <span class="help-icon" data-tooltip="Процент выкупленных заказов от общей суммы продаж">❓</span>
                             </label>
-                            <input type="number" class="form-control" id="kcPercent" placeholder="0" style="background-color: #f8f9fa;">
+                            <input type="number" class="form-control" id="kcPercent" style="background-color: #f8f9fa;">
                         </div>
                         <div class="form-group">
                             <label>Дата расчета</label>
@@ -260,9 +260,12 @@
                     </div>
 
                     <input type="hidden" id="calcEditingId" value="">
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <button class="btn btn-success" id="calcActionButton" onclick="calculateSalary()">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn btn-success" id="calculateButton" onclick="calculateSalary()">
                             <i>🧮</i> Рассчитать ЗП
+                        </button>
+                        <button class="btn btn-primary" id="saveCalcButton" onclick="saveSalaryCalculation()">
+                            <i>💾</i> Сохранить расчет
                         </button>
                         <button class="btn btn-secondary" id="cancelCalcEdit" style="display: none;" onclick="cancelCalculationEdit()">
                             Отменить редактирование

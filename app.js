@@ -218,7 +218,9 @@ async function editOperator(operatorId) {
 function autoCalculateQuartet(kcField, nonKcField, salesField, percentField) {
     const parseVal = (field) => {
         if (!field) return null;
-        const val = parseFloat(field.value);
+        const raw = field.value;
+        if (raw === '' || raw === null || raw === undefined) return null;
+        const val = parseFloat(raw);
         return isNaN(val) ? null : val;
     };
 
@@ -229,51 +231,42 @@ function autoCalculateQuartet(kcField, nonKcField, salesField, percentField) {
 
     const provided = [kcVal, nonKcVal, salesVal, percentVal].filter(v => v !== null).length;
 
-    if (provided >= 2) {
-        if (kcVal !== null && nonKcVal !== null) {
-            salesVal = kcVal + nonKcVal;
-        } else if (kcVal !== null && salesVal !== null) {
-            nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (nonKcVal !== null && salesVal !== null) {
-            kcVal = Math.max(salesVal - nonKcVal, 0);
-        } else if (salesVal !== null && percentVal !== null) {
-            kcVal = (salesVal * percentVal) / 100;
-            nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (kcVal !== null && percentVal !== null) {
-            salesVal = percentVal === 0 ? kcVal : (kcVal * 100) / percentVal;
-            nonKcVal = Math.max(salesVal - kcVal, 0);
-        } else if (nonKcVal !== null && percentVal !== null) {
-            const percentRemainder = 100 - percentVal;
-            salesVal = percentRemainder === 0 ? nonKcVal : (nonKcVal * 100) / percentRemainder;
-            kcVal = Math.max(salesVal - nonKcVal, 0);
+    if (provided < 2) {
+        if (percentField && percentField.value && (kcVal === null || salesVal === null)) {
+            percentField.value = '';
         }
-    } else if (provided === 1) {
-        if (salesVal !== null) {
-            kcVal = salesVal;
-            nonKcVal = 0;
-        } else if (kcVal !== null) {
-            salesVal = kcVal;
-            nonKcVal = 0;
-        } else if (nonKcVal !== null) {
-            salesVal = nonKcVal;
-            kcVal = 0;
-        }
+        return;
     }
 
+    if (kcVal !== null && nonKcVal !== null) {
+        salesVal = kcVal + nonKcVal;
+    } else if (kcVal !== null && salesVal !== null) {
+        nonKcVal = Math.max(salesVal - kcVal, 0);
+    } else if (nonKcVal !== null && salesVal !== null) {
+        kcVal = Math.max(salesVal - nonKcVal, 0);
+    } else if (salesVal !== null && percentVal !== null) {
+        kcVal = (salesVal * percentVal) / 100;
+        nonKcVal = Math.max(salesVal - kcVal, 0);
+    } else if (kcVal !== null && percentVal !== null) {
+        salesVal = percentVal === 0 ? kcVal : (kcVal * 100) / percentVal;
+        nonKcVal = Math.max(salesVal - kcVal, 0);
+    } else if (nonKcVal !== null && percentVal !== null) {
+        const percentRemainder = 100 - percentVal;
+        salesVal = percentRemainder === 0 ? nonKcVal : (nonKcVal * 100) / percentRemainder;
+        kcVal = Math.max(salesVal - nonKcVal, 0);
+    }
+
+    const activeElement = document.activeElement;
     if (salesVal !== null && kcVal !== null) {
         nonKcVal = Math.max(salesVal - kcVal, 0);
     }
 
-    kcVal = kcVal === null ? 0 : kcVal;
-    nonKcVal = nonKcVal === null ? 0 : nonKcVal;
-    salesVal = salesVal === null ? kcVal + nonKcVal : salesVal;
-    percentVal = salesVal > 0 ? (kcVal / salesVal) * 100 : 0;
+    const percentCalculated = (salesVal && kcVal !== null) ? (kcVal / salesVal) * 100 : null;
 
-    const activeElement = document.activeElement;
-    if (kcField && activeElement !== kcField) kcField.value = kcVal.toFixed(2);
-    if (nonKcField && activeElement !== nonKcField) nonKcField.value = nonKcVal.toFixed(2);
-    if (salesField && activeElement !== salesField) salesField.value = salesVal.toFixed(2);
-    if (percentField && activeElement !== percentField) percentField.value = percentVal.toFixed(1);
+    if (kcField && kcVal !== null && activeElement !== kcField) kcField.value = kcVal.toFixed(2);
+    if (nonKcField && nonKcVal !== null && activeElement !== nonKcField) nonKcField.value = nonKcVal.toFixed(2);
+    if (salesField && salesVal !== null && activeElement !== salesField) salesField.value = salesVal.toFixed(2);
+    if (percentField && percentCalculated !== null && activeElement !== percentField) percentField.value = percentCalculated.toFixed(1);
 }
 
 function deriveAmounts() {
@@ -295,17 +288,17 @@ function deriveCorrectionAmounts() {
 }
 
 function setCalculationEditingState(calculationId) {
-    const actionBtn = document.getElementById('calcActionButton');
+    const saveBtn = document.getElementById('saveCalcButton');
     const cancelBtn = document.getElementById('cancelCalcEdit');
     const calcIdField = document.getElementById('calcEditingId');
     if (!calcIdField) return;
 
     calcIdField.value = calculationId || '';
     if (calculationId) {
-        if (actionBtn) actionBtn.innerHTML = '<i>💾</i> Сохранить изменения';
+        if (saveBtn) saveBtn.innerHTML = '<i>💾</i> Сохранить изменения';
         if (cancelBtn) cancelBtn.style.display = 'inline-block';
     } else {
-        if (actionBtn) actionBtn.innerHTML = '<i>🧮</i> Рассчитать ЗП';
+        if (saveBtn) saveBtn.innerHTML = '<i>💾</i> Сохранить расчет';
         if (cancelBtn) cancelBtn.style.display = 'none';
     }
 }
@@ -319,20 +312,41 @@ function cancelCalculationEdit() {
     document.getElementById('calculationResult').innerHTML = '';
 }
 
-async function calculateSalary(event) {
-    if (event) event.preventDefault();
+function getNumericInputValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const raw = el.value;
+    if (raw === '' || raw === null || raw === undefined) return null;
+    const num = parseFloat(raw);
+    return isNaN(num) ? null : num;
+}
+
+function buildCalculationPayload() {
     const operatorId = document.getElementById('calcOperator').value;
     if (!operatorId) {
         alert('Выберите оператора');
-        return;
+        return null;
     }
+
     deriveAmounts();
-    const payload = {
+
+    const kc_amount = getNumericInputValue('kcAmount');
+    const non_kc_amount = getNumericInputValue('nonKcAmount');
+    const sales_amount = getNumericInputValue('salesAmount');
+    const redemption_percent = getNumericInputValue('kcPercent');
+    const providedCount = [kc_amount, non_kc_amount, sales_amount, redemption_percent].filter(v => v !== null).length;
+
+    if (providedCount < 2) {
+        alert('Введите минимум два поля среди "Сумма выкупленных заказов", "Сумма невыкупленных заказов", "Общая сумма продаж", "Процент выкупа".');
+        return null;
+    }
+
+    return {
         operator_id: parseInt(operatorId, 10),
-        kc_amount: parseFloat(document.getElementById('kcAmount').value) || 0,
-        non_kc_amount: parseFloat(document.getElementById('nonKcAmount').value) || 0,
-        sales_amount: parseFloat(document.getElementById('salesAmount').value) || 0,
-        redemption_percent: parseFloat(document.getElementById('kcPercent').value) || null,
+        kc_amount,
+        non_kc_amount,
+        sales_amount,
+        redemption_percent,
         additional_bonus: parseFloat(document.getElementById('additionalBonus').value) || 0,
         penalty_amount: parseFloat(document.getElementById('penaltyAmount').value) || 0,
         period_start: document.getElementById('calcPeriodStart').value,
@@ -344,10 +358,59 @@ async function calculateSalary(event) {
         bonus_percent_sales: parseFloat(document.getElementById('bonusPercentSales').value) || 0,
         include_redemption_percent: document.getElementById('includeRedemption').checked
     };
+}
+
+function renderCalculationResult(result) {
+    const summary = document.getElementById('calculationResult');
+    if (!summary) return;
+    const planLine = result.plan_target && result.plan_target > 0 ? `<div>Выполнение плана: ${(result.plan_completion * 100).toFixed(1)}%</div>` : '';
+    const taxLine = result.motivation_tax_bonus ? `<div>Налоговый бонус: ${result.motivation_tax_bonus.toLocaleString('ru-RU')} руб.</div>` : '';
+    const steps = (result.detailed_breakdown || []).map(step => `<li>${step}</li>`).join('');
+    summary.innerHTML = `
+        <div class="alert alert-success">
+            <div><strong>Итоговая ЗП: ${result.total_salary.toLocaleString('ru-RU')} руб.</strong></div>
+            <div>Процент выкупа: ${result.redemption_percent ? result.redemption_percent.toFixed(1) : '0.0'}%</div>
+            <div>Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}</div>
+            ${planLine}
+            ${taxLine}
+            ${steps ? `<hr><div>Детализация расчета:</div><ol>${steps}</ol>` : ''}
+        </div>`;
+}
+
+async function calculateSalary(event) {
+    if (event) event.preventDefault();
+    const payload = buildCalculationPayload();
+    if (!payload) return;
+    payload.save = false;
+
+    const response = await fetch('/api/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (result.error) {
+        alert(`Ошибка: ${result.error}`);
+        return;
+    }
+    renderCalculationResult(result);
+}
+
+async function saveSalaryCalculation(event) {
+    if (event) event.preventDefault();
+    const payload = buildCalculationPayload();
+    if (!payload) return;
+
     const calcIdField = document.getElementById('calcEditingId');
     const isEditing = calcIdField && calcIdField.value;
-    const url = isEditing ? `/api/calculations/${calcIdField.value}` : '/api/calculate';
-    const method = isEditing ? 'PUT' : 'POST';
+    let url = '/api/calculate';
+    let method = 'POST';
+    if (isEditing) {
+        url = `/api/calculations/${calcIdField.value}`;
+        method = 'PUT';
+    } else {
+        payload.save = true;
+    }
 
     const response = await fetch(url, {
         method,
@@ -359,26 +422,13 @@ async function calculateSalary(event) {
         alert(`Ошибка: ${result.error}`);
         return;
     }
-    const summary = document.getElementById('calculationResult');
-    if (summary) {
-        const planLine = result.plan_target && result.plan_target > 0 ? `<div>Выполнение плана: ${(result.plan_completion * 100).toFixed(1)}%</div>` : '';
-        const taxLine = result.motivation_tax_bonus ? `<div>Налоговый бонус: ${result.motivation_tax_bonus.toLocaleString('ru-RU')} руб.</div>` : '';
-        const steps = (result.detailed_breakdown || []).map(step => `<li>${step}</li>`).join('');
-        summary.innerHTML = `
-            <div class="alert alert-success">
-                <div><strong>Итоговая ЗП: ${result.total_salary.toLocaleString('ru-RU')} руб.</strong></div>
-                <div>Процент выкупа: ${result.redemption_percent ? result.redemption_percent.toFixed(1) : '0.0'}%</div>
-                <div>Используемая мотивация: ${result.applied_motivation || 'по умолчанию'}</div>
-                ${planLine}
-                ${taxLine}
-                ${steps ? `<hr><div>Детализация расчета:</div><ol>${steps}</ol>` : ''}
-            </div>`;
-    }
+    renderCalculationResult(result);
     if (isEditing) {
         setCalculationEditingState(null);
     }
     loadCalculations();
     loadPayments();
+    loadCorrections();
 }
 
 async function loadOperators() {

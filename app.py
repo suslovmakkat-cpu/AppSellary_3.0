@@ -96,12 +96,13 @@ def api_calculate():
     data = request.get_json(silent=True) or {}
     if 'operator_id' not in data:
         return jsonify({'error': 'operator_id is required'}), 400
+    save_flag = bool(data.get('save', False))
     try:
         result = calculate_salary(
             data['operator_id'],
-            data.get('kc_amount', 0),
-            data.get('non_kc_amount', 0),
-            data.get('sales_amount', 0),
+            data.get('kc_amount'),
+            data.get('non_kc_amount'),
+            data.get('sales_amount'),
             data.get('redemption_percent'),
             data.get('period_start'),
             data.get('period_end'),
@@ -109,7 +110,7 @@ def api_calculate():
             data.get('additional_bonus', 0),
             data.get('penalty_amount', 0),
             data.get('comment'),
-            save_to_db=True,
+            save_to_db=save_flag,
             motivation_override_id=data.get('motivation_override_id'),
             bonus_percent_salary=data.get('bonus_percent_salary', 0),
             bonus_percent_sales=data.get('bonus_percent_sales', 0),
@@ -118,17 +119,27 @@ def api_calculate():
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 
-    if result:
+    if result and save_flag:
+        correction_date = datetime.now().strftime('%Y-%m-%d')
         create_payment(
             data['operator_id'],
-            datetime.now().strftime('%Y-%m-%d'),
+            result.get('calculation_date') or datetime.now().strftime('%Y-%m-%d'),
             result['total_salary'],
             data.get('period_start'),
             data.get('period_end'),
-            result.get('derived_sales', data.get('sales_amount', 0)),
+            result.get('derived_sales', data.get('sales_amount') or 0),
             calculation_id=result.get('calculation_id'),
-            correction_date=None
+            correction_date=correction_date
         )
+        if result.get('calculation_id'):
+            conn = get_db_connection()
+            conn.execute(
+                'UPDATE manual_calculations SET correction_date = ? WHERE id = ?',
+                (correction_date, result['calculation_id']),
+            )
+            conn.commit()
+            conn.close()
+            result['correction_date'] = correction_date
     return jsonify(result or {'error': 'not found'})
 
 @app.route('/api/calculations', methods=['GET'])

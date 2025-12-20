@@ -4,6 +4,10 @@ from datetime import datetime
 from config import get_db_connection, log_action
 from motivation_engine import MotivationEngine, derive_amounts
 
+
+def _fmt_money(value: float) -> str:
+    return f"{value:,.2f}".replace(",", " ")
+
 def ensure_calculation_columns(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(manual_calculations)").fetchall()}
     required = {
@@ -72,76 +76,137 @@ def _calculate_components(
     steps = []
 
     steps.append(
-        f"Продажи: {sales_value:.2f} руб. (выкуплено {kc_value:.2f} руб., невыкупленных {non_kc_value:.2f} руб., процент выкупа {redemption_percent:.1f}% )"
+        "Исходные данные: выкупленные заказы {kc} руб., невыкупленные {non_kc} руб., общая сумма продаж {sales} руб., процент выкупа {percent:.1f}%".format(
+            kc=_fmt_money(kc_value),
+            non_kc=_fmt_money(non_kc_value),
+            sales=_fmt_money(sales_value),
+            percent=redemption_percent,
+        )
     )
 
     if motivation_result.base_salary:
+        prev = subtotal
         subtotal += motivation_result.base_salary
         steps.append(
-            f"Базовая часть мотивации: {motivation_result.base_salary:.2f} руб. → промежуточно {subtotal:.2f} руб."
+            f"Базовая часть мотивации: фиксированная сумма {_fmt_money(motivation_result.base_salary)} руб. Сумма была {prev:.2f} руб., стала {subtotal:.2f} руб."
         )
 
+    sales_percent_value = (motivation_result.sales_component / sales_value * 100.0) if sales_value else 0.0
     if motivation_result.sales_component:
+        prev = subtotal
         subtotal += motivation_result.sales_component
         steps.append(
-            f"Процент с продаж: +{motivation_result.sales_component:.2f} руб. → {subtotal:.2f} руб."
+            "Процент с продаж: база {base} руб., ставка {percent:.2f}%. Формула: {base} × {percent:.2f}% = {delta} руб. Сумма была {prev:.2f} руб., стала {after:.2f} руб.".format(
+                base=_fmt_money(sales_value),
+                percent=sales_percent_value,
+                delta=_fmt_money(motivation_result.sales_component),
+                prev=prev,
+                after=subtotal,
+            )
         )
 
     redemption_component_value = motivation_result.redemption_component if include_redemption_percent else 0.0
     if redemption_component_value:
+        prev = subtotal
         subtotal += redemption_component_value
         steps.append(
-            f"Процент с выкупа: +{redemption_component_value:.2f} руб. → {subtotal:.2f} руб."
+            "Процент с выкупа: база {base} руб., ставка {percent:.2f}%. Формула: {base} × {percent:.2f}% = {delta} руб. Сумма была {prev:.2f} руб., стала {after:.2f} руб.".format(
+                base=_fmt_money(kc_value),
+                percent=motivation_result.kc_percent,
+                delta=_fmt_money(redemption_component_value),
+                prev=prev,
+                after=subtotal,
+            )
         )
     elif motivation_result.redemption_component:
         steps.append("Процент с выкупа отключен для расчета")
 
     if motivation_result.fixed_bonuses:
+        prev = subtotal
         subtotal += motivation_result.fixed_bonuses
         steps.append(
-            f"Фиксированные бонусы мотивации: +{motivation_result.fixed_bonuses:.2f} руб. → {subtotal:.2f} руб."
+            f"Фиксированные бонусы мотивации: +{_fmt_money(motivation_result.fixed_bonuses)} руб. Сумма была {prev:.2f} руб., стала {subtotal:.2f} руб."
         )
 
     manual_bonus = float(additional_bonus or 0)
     manual_penalty = float(penalty_amount or 0)
     if manual_bonus:
+        prev = subtotal
         subtotal += manual_bonus
-        steps.append(f"Ручной фиксированный бонус: +{manual_bonus:.2f} руб. → {subtotal:.2f} руб.")
+        steps.append(
+            f"Ручной фиксированный бонус: +{_fmt_money(manual_bonus)} руб. Сумма была {prev:.2f} руб., стала {subtotal:.2f} руб."
+        )
     if manual_penalty:
+        prev = subtotal
         subtotal -= manual_penalty
-        steps.append(f"Штраф: -{manual_penalty:.2f} руб. → {subtotal:.2f} руб.")
+        steps.append(
+            f"Штраф: -{_fmt_money(manual_penalty)} руб. Сумма была {prev:.2f} руб., стала {subtotal:.2f} руб."
+        )
 
     if motivation_result.plan_multiplier != 1:
+        prev = subtotal
         subtotal *= motivation_result.plan_multiplier
         steps.append(
-            f"Множитель выполнения плана ({motivation_result.plan_multiplier:.2f}): → {subtotal:.2f} руб."
+            f"Множитель выполнения плана ({motivation_result.plan_multiplier:.2f}): {prev:.2f} руб. → {subtotal:.2f} руб. (план {motivation_result.plan_target:.2f}, выполнение {(motivation_result.plan_completion * 100):.1f}% )"
         )
 
     config_percent_bonus = motivation_result.percentage_bonus_value
     percent_bonus_amount = subtotal * (config_percent_bonus / 100.0)
     if percent_bonus_amount:
+        prev = subtotal
         subtotal += percent_bonus_amount
         steps.append(
-            f"Процентный бонус мотивации ({config_percent_bonus}%): +{percent_bonus_amount:.2f} руб. → {subtotal:.2f} руб."
+            "Процентный бонус мотивации: база {base} руб., ставка {percent:.2f}%. Формула: {base} × {percent:.2f}% = {delta} руб. Сумма была {prev:.2f} руб., стала {after:.2f} руб.".format(
+                base=_fmt_money(prev),
+                percent=config_percent_bonus,
+                delta=_fmt_money(percent_bonus_amount),
+                prev=prev,
+                after=subtotal,
+            )
         )
 
     bonus_from_salary = subtotal * (float(bonus_percent_salary or 0) / 100.0)
     bonus_from_sales = sales_value * (float(bonus_percent_sales or 0) / 100.0)
     if bonus_from_salary or bonus_from_sales:
+        prev = subtotal
         subtotal += bonus_from_salary + bonus_from_sales
+        details = []
+        if bonus_from_salary:
+            details.append(
+                "от расчета: {base} × {percent:.2f}% = {delta} руб.".format(
+                    base=_fmt_money(prev),
+                    percent=float(bonus_percent_salary or 0),
+                    delta=_fmt_money(bonus_from_salary),
+                )
+            )
+        if bonus_from_sales:
+            details.append(
+                "от продаж: {base} × {percent:.2f}% = {delta} руб.".format(
+                    base=_fmt_money(sales_value),
+                    percent=float(bonus_percent_sales or 0),
+                    delta=_fmt_money(bonus_from_sales),
+                )
+            )
         steps.append(
-            f"Доп. бонусы: от расчета {bonus_from_salary:.2f} руб., от продаж {bonus_from_sales:.2f} руб. → {subtotal:.2f} руб."
+            f"Дополнительные бонусы ({'; '.join(details)}). Сумма была {prev:.2f} руб., стала {subtotal:.2f} руб."
         )
 
     tax_bonus_percent = float(operator["tax_bonus"] or 0)
     tax_bonus = subtotal * (tax_bonus_percent / 100.0) if tax_bonus_percent > 0 else 0
     total_salary = subtotal + tax_bonus
     if tax_bonus:
+        pre_tax = subtotal
         steps.append(
-            f"Надбавка оператора за налог ({tax_bonus_percent}%): +{tax_bonus:.2f} руб. → {total_salary:.2f} руб."
+            "Надбавка оператора за налог: база {base} руб., ставка {percent:.2f}%. Формула: {base} × {percent:.2f}% = {delta} руб. Сумма была {prev:.2f} руб., стала {after:.2f} руб.".format(
+                base=_fmt_money(pre_tax),
+                percent=tax_bonus_percent,
+                delta=_fmt_money(tax_bonus),
+                prev=pre_tax,
+                after=total_salary,
+            )
         )
 
-    steps.append(f"Итоговая выплата: {total_salary:.2f} руб.")
+    steps.append(f"Итоговая выплата: {_fmt_money(total_salary)} руб.")
 
     breakdown = {
         "kc_salary": motivation_result.redemption_component,
@@ -263,8 +328,8 @@ def calculate_salary(
              redemption_percent, manual_fixed_bonus, manual_penalty, bonus_percent_salary,
              bonus_percent_sales, applied_motivation_id, applied_motivation_name,
              motivation_snapshot, calculation_breakdown, working_days_in_period,
-             plan_target, plan_completion, include_redemption_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             plan_target, plan_completion, include_redemption_percent, correction_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 operator_id,
@@ -291,17 +356,26 @@ def calculate_salary(
                 calc_result["plan_target"],
                 calc_result["plan_completion"],
                 1 if include_redemption_percent else 0,
+                None,
             ),
         )
         calc_id = cur.lastrowid
         conn.commit()
+        calc_row = conn.execute(
+            "SELECT calculation_date, correction_date FROM manual_calculations WHERE id = ?",
+            (calc_id,),
+        ).fetchone()
         log_action("calculation_created", f"calc for operator {operator_id}", operator_id)
     else:
         calc_id = None
+        calc_row = None
 
     conn.close()
 
     calc_result["calculation_id"] = calc_id
+    if calc_row:
+        calc_result["calculation_date"] = calc_row["calculation_date"]
+        calc_result["correction_date"] = calc_row["correction_date"]
     return calc_result
 
 
