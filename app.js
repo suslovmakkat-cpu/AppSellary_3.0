@@ -2,6 +2,10 @@ let cachedOperators = [];
 let cachedMotivations = [];
 const modalStates = {};
 
+function confirmDeletion(message = 'Вы уверены, что хотите удалить запись?') {
+    return window.confirm(message);
+}
+
 function getModalStateKey(modalId) {
     return `modal_state_${modalId}`;
 }
@@ -250,10 +254,11 @@ function autoCalculateQuartet(kcField, nonKcField, salesField, percentField) {
     salesVal = salesVal === null ? kcVal + nonKcVal : salesVal;
     percentVal = salesVal > 0 ? (kcVal / salesVal) * 100 : 0;
 
-    if (kcField) kcField.value = kcVal.toFixed(2);
-    if (nonKcField) nonKcField.value = nonKcVal.toFixed(2);
-    if (salesField) salesField.value = salesVal.toFixed(2);
-    if (percentField) percentField.value = percentVal.toFixed(1);
+    const activeElement = document.activeElement;
+    if (kcField && activeElement !== kcField) kcField.value = kcVal.toFixed(2);
+    if (nonKcField && activeElement !== nonKcField) nonKcField.value = nonKcVal.toFixed(2);
+    if (salesField && activeElement !== salesField) salesField.value = salesVal.toFixed(2);
+    if (percentField && activeElement !== percentField) percentField.value = percentVal.toFixed(1);
 }
 
 function deriveAmounts() {
@@ -368,17 +373,22 @@ async function loadOperators() {
     const calcOperator = document.getElementById('calcOperator');
     const operatorMotivation = document.getElementById('operatorMotivation');
     if (operatorsTable) {
-        operatorsTable.innerHTML = cachedOperators.map(op => `
+        operatorsTable.innerHTML = cachedOperators.map(op => {
+            const motivation = cachedMotivations.find(m => `${m.id}` === `${op.motivation_id}`);
+            const motivationTitle = motivation ? motivation.name : '—';
+            return `
             <tr>
                 <td>${op.name}</td>
                 <td>${op.tax_bonus ? `${op.tax_bonus}%` : '—'}</td>
                 <td>${op.is_active ? '✅ Активен' : '❌ Неактивен'}</td>
+                <td>${motivationTitle}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="editOperator(${op.id})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="trashOperator(${op.id})">🗑️</button>
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
     }
     if (calcOperator) {
         calcOperator.innerHTML = `<option value=''>Выберите оператора</option>` +
@@ -395,6 +405,7 @@ async function loadOperators() {
 }
 
 async function trashOperator(operatorId) {
+    if (!confirmDeletion('Удалить оператора?')) return;
     await fetch(`/api/trash/operator/${operatorId}`, { method: 'POST' });
     loadOperators();
 }
@@ -520,7 +531,7 @@ async function loadDashboard() {
 function renderDashboardChart(labels, values) {
     const container = document.getElementById('dashboardChart');
     if (!container) return;
-    const normalizedValues = (values || []).map(v => Number(v) || 0);
+    const normalizedValues = (labels || []).map((_, idx) => Number(values?.[idx]) || 0);
     if (!labels || labels.length === 0) {
         container.innerHTML = '<div style="text-align:center; color:#666;">Нет данных для отображения</div>';
         return;
@@ -564,9 +575,19 @@ async function refreshDashboardChart() {
     if (operatorId) params.append('operator_id', operatorId);
     if (start) params.append('start_date', start);
     if (end) params.append('end_date', end);
-    const response = await fetch(`/api/dashboard/series?${params.toString()}`);
-    const data = await response.json();
-    renderDashboardChart(data.labels || [], data.values || []);
+    try {
+        const response = await fetch(`/api/dashboard/series?${params.toString()}`);
+        if (!response.ok) throw new Error('Не удалось получить данные графика');
+        const raw = await response.json();
+        const data = raw && typeof raw === 'object' ? (raw.series || raw) : {};
+        const labels = Array.isArray(data.labels) ? data.labels : [];
+        const values = Array.isArray(data.values) ? data.values : [];
+        renderDashboardChart(labels, values);
+    } catch (error) {
+        console.error('Ошибка загрузки графика', error);
+        const container = document.getElementById('dashboardChart');
+        if (container) container.innerHTML = '<div style="text-align:center; color:#e74c3c;">Ошибка загрузки данных графика</div>';
+    }
 }
 
 async function loadMotivations() {
@@ -811,11 +832,13 @@ async function saveMotivation() {
 }
 
 async function trashMotivation(motivationId) {
+    if (!confirmDeletion('Удалить мотивацию?')) return;
     await fetch(`/api/trash/motivation/${motivationId}`, { method: 'POST' });
     loadMotivations();
 }
 
 async function trashCalculation(calculationId) {
+    if (!confirmDeletion('Удалить расчет?')) return;
     await fetch(`/api/trash/calculation/${calculationId}`, { method: 'POST' });
     loadCalculations();
     loadTrash();
@@ -845,10 +868,10 @@ async function restoreOperator(id) { await fetch(`/api/trash/operator/${id}/rest
 async function restorePayment(id) { await fetch(`/api/trash/payment/${id}/restore`, { method: 'POST' }); loadTrash(); loadPayments(); }
 async function restoreCalculation(id) { await fetch(`/api/trash/calculation/${id}/restore`, { method: 'POST' }); loadTrash(); loadCalculations(); }
 async function restoreMotivation(id) { await fetch(`/api/trash/motivation/${id}/restore`, { method: 'POST' }); loadTrash(); loadMotivations(); }
-async function deleteOperatorForever(id) { await fetch(`/api/trash/operator/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
-async function deletePaymentForever(id) { await fetch(`/api/trash/payment/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
-async function deleteCalculationForever(id) { await fetch(`/api/trash/calculation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
-async function deleteMotivationForever(id) { await fetch(`/api/trash/motivation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
+async function deleteOperatorForever(id) { if (!confirmDeletion('Удалить оператора навсегда?')) return; await fetch(`/api/trash/operator/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
+async function deletePaymentForever(id) { if (!confirmDeletion('Удалить выплату навсегда?')) return; await fetch(`/api/trash/payment/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
+async function deleteCalculationForever(id) { if (!confirmDeletion('Удалить расчет навсегда?')) return; await fetch(`/api/trash/calculation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
+async function deleteMotivationForever(id) { if (!confirmDeletion('Удалить мотивацию навсегда?')) return; await fetch(`/api/trash/motivation/${id}/delete`, { method: 'DELETE' }); loadTrash(); }
 
 async function loadCorrections() {
     const response = await fetch('/api/corrections');
@@ -870,10 +893,21 @@ async function loadCorrections() {
                 <td>${(item.total_salary || 0).toLocaleString('ru-RU')} руб.</td>
                 <td>${payment.total_salary ? payment.total_salary.toLocaleString('ru-RU') + ' руб.' : '—'}</td>
                 <td>${formatDate(correctionDate)}</td>
-                <td><button class="btn btn-sm btn-warning" onclick="openCorrection(${item.id})">✏️</button></td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="openCorrection(${item.id})">✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCorrection(${item.id})">🗑️</button>
+                </td>
             </tr>`;
         }).join('');
     }
+}
+
+async function deleteCorrection(correctionId) {
+    if (!confirmDeletion('Удалить корректировку?')) return;
+    await fetch(`/api/corrections/${correctionId}`, { method: 'DELETE' });
+    loadCorrections();
+    loadCalculations();
+    loadPayments();
 }
 
 async function openCorrection(calcId) {
@@ -1017,6 +1051,7 @@ async function savePaymentEdit() {
 }
 
 async function deletePayment(paymentId) {
+    if (!confirmDeletion('Удалить выплату?')) return;
     await fetch(`/api/payments/${paymentId}`, { method: 'DELETE' });
     loadPayments();
 }
