@@ -44,7 +44,7 @@ class MotivationEngine:
         working_days_in_period: float,
     ) -> MotivationRuleResult:
         blocks: List[Dict[str, Any]] = config.get("blocks") or []
-        tax_bonus_percent = float(config.get("tax_bonus_percent") or 0)
+        tax_bonus_percent = 0.0
         together_totals = {
             "base_salary": 0.0,
             "sales_component": 0.0,

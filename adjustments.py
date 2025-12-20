@@ -1,5 +1,7 @@
 ﻿from config import get_db_connection, log_action
 from datetime import datetime
+from calculations import update_calculation
+from payments import update_payment
 
 # ============================================================
 # EXISTING LOGIC (UNCHANGED)
@@ -62,6 +64,123 @@ def mass_adjust_payments(operator_ids, adjustment_type, adjustment_value):
     conn.commit()
     conn.close()
     return True
+
+
+# =========================
+# CORRECTION HELPERS
+# =========================
+
+
+def list_corrections():
+    conn = get_db_connection()
+    rows = conn.execute(
+        '''
+        SELECT mc.*, o.name AS operator_name,
+               p.id AS payment_id,
+               p.total_salary AS payment_total,
+               p.correction_date AS payment_correction_date,
+               p.period_start AS payment_period_start,
+               p.period_end AS payment_period_end
+        FROM manual_calculations mc
+        LEFT JOIN operators o ON o.id = mc.operator_id
+        LEFT JOIN payments p ON p.operator_id = mc.operator_id
+             AND IFNULL(p.period_start,'') = IFNULL(mc.period_start,'')
+             AND IFNULL(p.period_end,'') = IFNULL(mc.period_end,'')
+             AND p.is_deleted = 0
+        WHERE mc.is_deleted = 0
+        ORDER BY mc.calculation_date DESC
+        '''
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_correction(calculation_id):
+    conn = get_db_connection()
+    row = conn.execute(
+        '''
+        SELECT mc.*, o.name AS operator_name,
+               p.id AS payment_id,
+               p.total_salary AS payment_total,
+               p.correction_date AS payment_correction_date,
+               p.period_start AS payment_period_start,
+               p.period_end AS payment_period_end
+        FROM manual_calculations mc
+        LEFT JOIN operators o ON o.id = mc.operator_id
+        LEFT JOIN payments p ON p.operator_id = mc.operator_id
+             AND IFNULL(p.period_start,'') = IFNULL(mc.period_start,'')
+             AND IFNULL(p.period_end,'') = IFNULL(mc.period_end,'')
+             AND p.is_deleted = 0
+        WHERE mc.id = ? AND mc.is_deleted = 0
+        '''
+        , (calculation_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def apply_correction(calculation_id, payload):
+    base_conn = get_db_connection()
+    existing = base_conn.execute(
+        'SELECT * FROM manual_calculations WHERE id = ? AND is_deleted = 0',
+        (calculation_id,)
+    ).fetchone()
+    base_conn.close()
+
+    if not existing:
+        return None
+
+    now = datetime.now().isoformat()
+    operator_id = payload.get('operator_id') or existing['operator_id']
+    kc_amount = payload.get('kc_amount', existing['kc_amount'])
+    non_kc_amount = payload.get('non_kc_amount', existing['non_kc_amount'])
+    sales_amount = payload.get('sales_amount', existing['sales_amount'])
+    redemption_percent = payload.get('redemption_percent', existing['redemption_percent'])
+    period_start = payload.get('period_start', existing['period_start'])
+    period_end = payload.get('period_end', existing['period_end'])
+    working_days = payload.get('working_days_in_period', existing['working_days_in_period'])
+    additional_bonus = payload.get('additional_bonus', existing['additional_bonus'])
+    penalty_amount = payload.get('penalty_amount', existing['penalty_amount'])
+    comment = payload.get('comment', existing['comment'])
+    include_buyout = payload.get('include_buyout_percent', existing.get('include_buyout_percent', 1))
+    payment_id = payload.get('payment_id')
+
+    result = update_calculation(
+        calculation_id,
+        operator_id,
+        kc_amount,
+        non_kc_amount,
+        sales_amount,
+        redemption_percent,
+        period_start,
+        period_end,
+        working_days,
+        additional_bonus,
+        penalty_amount,
+        comment,
+        payload.get('motivation_override_id'),
+        payload.get('bonus_percent_salary', existing['bonus_percent_salary']),
+        payload.get('bonus_percent_sales', existing['bonus_percent_sales']),
+        include_buyout,
+        now,
+        payment_id,
+    )
+
+    if not result:
+        return None
+
+    if payment_id:
+        update_payment(
+            payment_id,
+            total_salary=result['total_salary'],
+            period_start=period_start,
+            period_end=period_end,
+            sales_amount=result.get('derived_sales', sales_amount),
+            correction_date=now,
+        )
+
+    log_action('calculation_corrected', f'Calculation {calculation_id} corrected', operator_id)
+    return result
 
 
 # ============================================================

@@ -80,7 +80,9 @@ def ensure_schema() -> None:
             deleted_at TIMESTAMP,
             working_days_in_period REAL DEFAULT 0,
             plan_target REAL DEFAULT 0,
-            plan_completion REAL DEFAULT 0
+            plan_completion REAL DEFAULT 0,
+            include_buyout_percent INTEGER DEFAULT 1,
+            correction_date TEXT
         )
         """,
     )
@@ -173,6 +175,8 @@ def ensure_schema() -> None:
     _ensure_column(conn, "manual_calculations", "working_days_in_period", "REAL DEFAULT 0")
     _ensure_column(conn, "manual_calculations", "plan_target", "REAL DEFAULT 0")
     _ensure_column(conn, "manual_calculations", "plan_completion", "REAL DEFAULT 0")
+    _ensure_column(conn, "manual_calculations", "include_buyout_percent", "INTEGER DEFAULT 1")
+    _ensure_column(conn, "manual_calculations", "correction_date", "TEXT")
 
     _ensure_column(conn, "payments", "period_start", "DATE")
     _ensure_column(conn, "payments", "period_end", "DATE")
@@ -181,6 +185,7 @@ def ensure_schema() -> None:
     _ensure_column(conn, "payments", "penalty_amount", "REAL DEFAULT 0")
     _ensure_column(conn, "payments", "is_deleted", "INTEGER DEFAULT 0")
     _ensure_column(conn, "payments", "deleted_at", "TIMESTAMP")
+    _ensure_column(conn, "payments", "correction_date", "TEXT")
 
     _ensure_settings(
         conn,
